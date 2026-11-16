@@ -17,9 +17,11 @@ Lenovo and Vantage are Lenovo trademarks. This is an independent project.
 
 ## Qt and Microsoft runtimes
 
-Qt 6.12.0 Core, Gui, Widgets and Network are dynamically linked. Applicable LGPL/GPL/exception texts are retained under licenses; Qt DLLs remain replaceable. Corresponding source is available from [Qt archives](https://download.qt.io/archive/qt/) and [Qt repositories](https://code.qt.io/). Public distribution requires the corresponding source or a compliant source offer and applicable notices.
+Qt 6.12.0 Core, Gui, Widgets and Network are statically linked with the application's MSVC runtime. Qt is built from the unmodified [qtbase 6.12.0 source archive](https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz), SHA-256 a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307. Configure arguments are retained in static-build.json. Applicable license texts, Qt's LICENSES directory and generated SPDX SBOM accompany the static package.
 
-The package includes compatible Microsoft Visual C++ runtime DLLs from the user's Windows installation and the original runtimes supplied with Lenovo mixed-mode assemblies. The battery bridge targets Windows 11's existing .NET Framework. No .NET SDK is bundled.
+The relink directory retains application object files, protocol.lib, a link response file and a PowerShell relinking script. It permits technical relinking with a compatible static Qt built with the same MSVC toolchain and feature configuration. Source and build instructions remain in the project; no project-wide open-source license is assigned by this build change.
+
+Original Lenovo libraries remain separately loaded DLLs. Their original runtimes are retained under vendor/idea; GPUInfo's dynamic Microsoft C++ runtime dependencies are retained beside it under vendor/gpu. Static linking of the main program does not alter these original components. The battery bridge targets Windows 11's existing .NET Framework. No .NET SDK is bundled.
 
 ## Open-source references
 

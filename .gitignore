@@ -67,3 +67,6 @@ compile_commands.json
 
 # Historical generated verification snapshots
 /docs/*verification*.json
+
+# Static Qt bootstrap is source, not generated output
+!/scripts/build-qt-static.ps1

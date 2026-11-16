@@ -1,10 +1,10 @@
-# ThinkVantage 0.5.4
+# ThinkVantage 0.6.0
 
 面向 Windows 11 x64 的轻量设备设置工具，使用 C++20、Qt 6.12.0 Widgets 和 E:\Qt6 中的 MSVC 143 构建，针对 ThinkBook 16 G6+ IMH / 21LE 适配。
 
 ## 使用
 
-解压整个文件夹后运行 ThinkVantage.exe，点击“管理员模式”可使用 GPU 模式、超频、开盖开机及 Fn/Ctrl 互换。启动时注册任务栏通知区域的绿色 T 托盘图标。关闭主窗口后继续留在托盘，右键“退出 ThinkVantage”完全退出。不安装系统服务，不自动添加开机启动。
+解压整个文件夹后运行 ThinkVantage.exe。主程序已静态链接Qt和C++运行库，vendor仍保留联想原厂DLL及隔离桥接程序。点击“管理员模式”可使用 GPU 模式、超频、开盖开机及 Fn/Ctrl 互换。启动时注册任务栏通知区域的绿色 T 托盘图标。关闭主窗口后继续留在托盘，右键“退出 ThinkVantage”完全退出。不安装系统服务，不自动添加开机启动。
 
 ## 托盘与快捷面板
 
@@ -24,7 +24,7 @@
 
 命令行：--tray 仅驻留托盘；--quick 打开快捷面板；--quit 请求当前实例退出。GUI单实例按当前用户与Windows会话隔离，控制通道只接受打开、显示面板及退出，不接受硬件写入请求。
 
-按用户提供的 Vantage 电源、输入与人体存在检测图片补齐功能。原厂运行库提取到 vendor，Qt 和兼容的 MSVC 运行库一并打包；电池桥接使用 Windows 11 自带的 .NET Framework 4.x，不需要 .NET SDK。截图中的勾选状态不作为本机初始设置，界面始终读取当前真实值。
+按用户提供的 Vantage 电源、输入与人体存在检测图片补齐功能。原厂运行库提取到 vendor，Qt及主程序的MSVC运行库静态链接，原厂组件依赖的运行库随vendor目录保留；电池桥接使用 Windows 11 自带的 .NET Framework 4.x，不需要 .NET SDK。截图中的勾选状态不作为本机初始设置，界面始终读取当前真实值。
 
 ## 图片功能对照
 
@@ -71,13 +71,33 @@
 
 ## 构建
 
+默认使用经过裁剪的Qt 6.12.0静态库与MSVC静态运行库（/MT），完整保留32项设备控制、托盘、诊断与动效。裁剪只作用于Qt，不改变项目功能。
+
 ```powershell
 cd E:\Code\ThinkVantage
+# 首次自动下载、核对SHA-256并构建静态Qt；之后复用本地缓存
 .\scripts\build.ps1 -Package
-python .\tests\integration.py .\dist\ThinkVantage-0.5.4-win64\ThinkVantage.exe --report .\research\integration-readonly.json
+# 也可以单独预编译Qt；省略DownloadProxy时读取当前系统代理
+.\scripts\build-qt-static.ps1 -DownloadProxy http://127.0.0.1:7890
+# 验证发布目录，默认只读
+.\scripts\verify-smooth.ps1
 ```
 
-工具链：Qt 6.12.0 msvc2022_64、MSVC 143 19.44、Windows SDK 10.0.26100.0。extract-vendor.ps1 从本机固定版本组件提取运行库，以 Framework64 csc 编译隔离桥接程序。构建只修改当前进程环境变量。
+工具链使用E:\Qt6中的MSVC 143 19.44、Windows SDK 10.0.26100.0、CMake与Ninja；`-QtRoot`可指定工具链根目录，`-QtPrefix`可指定兼容的静态Qt，`-Jobs`限制并行任务。构建仅修改当前进程环境。Qt缓存位于build/qt，应用构建位于build/static-release，发布到dist/ThinkVantage-0.6.0-win64-static。检测到动态Qt时配置会直接报错。
+
+静态Qt保留Core、Gui、Widgets、Network及测试所需组件；关闭OpenGL、Vulkan、ICU、SQL、打印、DBus、SSL、HTTP、网络代理、网络磁盘缓存、SOCKS5、UDP、图形特效、PDF及未使用的Windows主题插件。保留Fusion、Windows平台、字体与无障碍功能，Network中的QLocalServer/QLocalSocket继续承担单实例通信。发布程序只静态导入Windows平台插件，测试程序另导入offscreen插件。配置方式见[Qt静态部署说明](https://doc.qt.io/qt-6/windows-deployment.html)与[Qt配置选项](https://doc.qt.io/qt-6/configure-options.html)。
+
+Qt和应用均启用体积优化与链接时代码生成；应用使用/O1、/GL、/Gy、/Gw及/OPT:REF、/OPT:ICF，按实际引用剔除未使用代码。static-build.json记录构建参数、原始Qt源码校验和、EXE大小与导入表。打包前自动拒绝Qt DLL和主程序的动态VC/UCRT依赖。
+
+联想原厂DLL及.NET桥接程序保持独立，不能由本项目改成静态库；GPUInfo依赖的VC运行库保留在vendor/gpu中。extract-vendor.ps1从本机固定版本组件提取运行库，使用Framework64 csc编译隔离桥接程序。
+
+发布目录的relink包含应用对象、protocol.lib和链接响应文件，可用同工具链、兼容配置的修改版Qt重新链接：
+
+```powershell
+.\dist\ThinkVantage-0.6.0-win64-static\relink\relink.ps1 -QtPrefix '兼容的静态Qt目录'
+```
+
+Qt原始源码：[qtbase 6.12.0](https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz)，SHA-256为a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307；构建不修改Qt源码。Qt许可证、SBOM和重链接材料随静态包保留，不改变联想组件或原创源码的许可。
 
 --probe 返回只读 JSON；--ui-smoke --screenshot <绝对路径.png> 导出各页面及完整电源页后退出。内部 --apply 接受固定 ID 与数值，频率另查设备范围和步长。
 

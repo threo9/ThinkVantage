@@ -26,7 +26,7 @@ int main(int argc,char **argv){
         }
         output(result);return result.contains("ok")&&!result["ok"].toBool()?1:0;
     }
-    QApplication app(argc,argv);app.setApplicationName("ThinkVantage");app.setApplicationVersion("0.5.4");app.setOrganizationName("ThinkVantage");app.setStyle(QStyleFactory::create("Fusion"));
+    QApplication app(argc,argv);app.setApplicationName("ThinkVantage");app.setApplicationVersion("0.6.0");app.setOrganizationName("ThinkVantage");app.setStyle(QStyleFactory::create("Fusion"));
     if(!Backend::isWindows11()){QMessageBox::critical(nullptr,"ThinkVantage","此程序仅支持 Windows 11 x64。");return 1;}
     auto args=app.arguments();int ix=args.indexOf("--screenshot");QString capture=ix>=0&&ix+1<args.size()?args[ix+1]:QString();
     bool uiSmoke=args.contains("--ui-smoke"),traySmoke=args.contains("--tray-smoke"),testing=uiSmoke||traySmoke||!capture.isEmpty();

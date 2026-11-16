@@ -1,6 +1,20 @@
-# ThinkVantage 0.5.4 验证记录
+# ThinkVantage 0.6.0 验证记录
 
 日期：2026-11-16，Asia/Hong_Kong。
+
+## 0.6.0 静态链接与Qt裁剪
+
+按用户最终要求仅裁剪Qt，保留全部32项业务控制、5个页面、9项托盘快捷控制、诊断和动效；未加入业务功能开关或精简配置。除版本号外，backend/input/vendor/window/mode_slider及其现有测试保持原实现。
+
+从校验SHA-256的Qt 6.12.0原始qtbase源码构建Release静态Qt，启用静态MSVC运行库、体积优化及LTCG；关闭OpenGL、Vulkan、ICU、SQL、打印、DBus、SSL、HTTP、网络代理/缓存、SOCKS5、UDP、图形特效、PDF和未使用的Windows主题插件。项目继续使用Fusion和Windows平台插件，保留字体及无障碍功能。Qt源码未修改。安装头文件中的对应QT_FEATURE宏已核对为-1。
+
+应用启用/MT、/O1、/GL、/Gy、/Gw、/OPT:REF及/OPT:ICF，静态插件显式导入。构建配置拒绝动态Qt，打包前使用PE导入表拒绝Qt DLL及主程序的动态VC/UCRT依赖。发布EXE导入表中仅有Windows系统组件；联想原厂DLL、.NET桥接及其所需运行库仍位于vendor目录，不宣称将这些专有组件静态化。
+
+验证：静态Qt构建安装成功，应用Release构建及两项CTest通过。发布包在PATH仅含Windows目录、未指定Qt插件路径时通过原生主窗口5页32控件、托盘9控件、静默读取和透明窗口边缘检查；独立只读集成通过，设置前后一致。后台启动、重复启动唤起、关闭驻留、面板入口、Esc、退出和重启通过。重链接材料实际重新生成EXE，重新链接后的程序也通过原生5页32控件检查。没有运行设置写入测试或切换性能档位。
+
+体积：原0.5.4主程序加Qt库/平台插件共29,905,944字节；新静态EXE为17,596,928字节，减少41.2%。比较不包含两版共同需要的原厂组件、文档及新增重链接材料，不等同于ZIP体积下降比例，也不代表运行速度或内存实测改善。
+
+记录：research/static-qt-build-final.log、research/static-v060-build.log、research/static-v060-integration.json、research/static-v060-lifecycle.json、research/static-v060-relinked-ui.json、research/static-v060-relink.log、docs/static-build-v060.json、docs/tray-verification-v060.json和docs/ui-verification-v060.json。可运行scripts/build.ps1 -Package及scripts/verify-smooth.ps1复现。发布包保留Qt许可证、SPDX SBOM、应用对象和重链接脚本。
 
 ## 0.5.4 性能与极客配色微调
 
