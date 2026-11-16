@@ -1,0 +1,27 @@
+param([switch]$VerifyAdjustment)
+$ErrorActionPreference='Stop'
+Set-Location (Split-Path -Parent $PSScriptRoot)
+$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding=$OutputEncoding
+$env:PATH="$env:SystemRoot\System32;$env:SystemRoot"
+Remove-Item Env:QT_QPA_PLATFORM_PLUGIN_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+$exe='E:\Code\ThinkVantage\dist\ThinkVantage-0.4.0-win64\ThinkVantage.exe'
+try {
+    $arguments=@('--tray-smoke','--screenshot','E:\Code\ThinkVantage\docs\screenshots-v040\tray.png')
+    if($VerifyAdjustment){$arguments+='--verify-adjustment'}
+    $p=Start-Process -FilePath $exe -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardError 'research/tray-v040-stderr.log'
+    if(-not $p.WaitForExit(55000)){$p.Kill();throw 'Tray validation timed out'}
+    if($p.ExitCode){throw "Tray validation failed: $($p.ExitCode)"}
+    Copy-Item -LiteralPath 'dist/ThinkVantage-0.4.0-win64/tray-smoke.json' -Destination docs/tray-verification-v040.json -Force
+    $p=Start-Process -FilePath $exe -ArgumentList '--ui-smoke','--screenshot','E:\Code\ThinkVantage\docs\screenshots-v040\app.png' -PassThru -WindowStyle Hidden -RedirectStandardError 'research/tray-v040-ui-stderr.log'
+    if(-not $p.WaitForExit(40000)){$p.Kill();throw 'Main UI validation timed out'}
+    if($p.ExitCode){throw "Main UI validation failed: $($p.ExitCode)"}
+    Copy-Item -LiteralPath 'dist/ThinkVantage-0.4.0-win64/ui-smoke.json' -Destination docs/ui-verification-v040.json -Force
+    & 'F:\Python\Python311\python.exe' tests/integration.py $exe --report research/tray-v040-integration.json *> research/tray-v040-integration.log
+    if($LASTEXITCODE){throw 'Read-only integration failed'}
+    @{ok=$true;completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content research/tray-v040-completion.json
+} catch {
+    @{ok=$false;error=$_.Exception.Message;completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content research/tray-v040-completion.json
+    exit 1
+}

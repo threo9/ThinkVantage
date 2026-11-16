@@ -54,3 +54,16 @@ compile_commands.json
 *creator.user*
 
 *_qmlcache.qrc
+
+# ThinkVantage generated files
+/dist/
+/research/
+/vendor/
+/docs/screenshots*/
+*.user
+
+# Hand-written UI state helper
+!/src/ui_update.h
+
+# Historical generated verification snapshots
+/docs/*verification*.json
