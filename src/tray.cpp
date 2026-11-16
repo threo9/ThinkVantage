@@ -9,7 +9,7 @@
 #include <windows.h>
 
 namespace {
-QLabel *text(const QString &value,const char *name=nullptr){auto label=new QLabel(value);label->setWordWrap(true);if(name)label->setObjectName(name);return label;}
+QLabel *text(const QString &value,const char *name=nullptr){auto label=new QLabel(value);label->setTextFormat(Qt::PlainText);label->setWordWrap(true);if(name)label->setObjectName(name);return label;}
 QFrame *line(){auto l=new QFrame;l->setFixedHeight(1);l->setObjectName("separator");return l;}
 }
 
@@ -88,13 +88,13 @@ QuickPanel::QuickPanel():QFrame(nullptr,Qt::Popup|Qt::FramelessWindowHint|Qt::No
 }
 
 void QuickPanel::paintEvent(QPaintEvent *event){QFrame::paintEvent(event);QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setPen(Qt::NoPen);for(int i=6;i>=1;--i){p.setBrush(QColor(15,40,40,3));p.drawRoundedRect(QRectF(8-i,8-i/2.,width()-16+2*i,height()-16+1.5*i),12+i,12+i);}}
-void QuickPanel::enableControls(){auto f=snapshot["features"].toObject(),pending=snapshot["_pending"].toObject();for(auto i=controls.begin();i!=controls.end();++i){auto state=f[i.key()].toObject();Ui::enabled(i.value(),!(busy&&pending.isEmpty())&&!pending.contains(i.key())&&state["available"].toBool()&&state["enabled"].toBool(true));}}
-void QuickPanel::setBusy(bool value){if(busy==value)return;busy=value;enableControls();if(QDateTime::currentMSecsSinceEpoch()>=feedbackUntil)Ui::text(message,value?"正在应用设置…":"更新于 "+QTime::currentTime().toString("HH:mm:ss"));}
+void QuickPanel::enableControls(){auto pending=snapshot["_pending"].toObject();for(auto i=controls.begin();i!=controls.end();++i)Ui::enabled(i.value(),!(busy&&pending.isEmpty())&&!pending.contains(i.key())&&Ui::writable(snapshot,i.key()));}
+void QuickPanel::setBusy(bool value){if(busy==value)return;busy=value;enableControls();if(snapshot["stale"].toBool()){Ui::text(message,"状态已过期，请刷新后重试");return;}if(QDateTime::currentMSecsSinceEpoch()>=feedbackUntil)Ui::text(message,value?"正在应用设置…":"更新于 "+QTime::currentTime().toString("HH:mm:ss"));}
 void QuickPanel::feedback(bool ok,const QString &value){feedbackUntil=QDateTime::currentMSecsSinceEpoch()+6000;if(message->property("error").toBool()!=!ok){message->setProperty("error",!ok);message->style()->unpolish(message);message->style()->polish(message);}Ui::text(message,value);if(message->toolTip()!=value)message->setToolTip(value);}
 void QuickPanel::updateState(const QJsonObject &state){
-    updating=true;snapshot=state;auto features=state["features"].toObject();auto pending=state["_pending"].toObject();auto b=state["battery"].toObject();auto percent=state["batteryPercent"];Ui::text(battery,percent.isDouble()?QString::number(percent.toInt())+"%":"—");Ui::visible(batteryBar,percent.isDouble());Ui::progress(batteryBar,percent.toInt());Ui::text(supply,state["ac"].toBool()?"已连接电源":"电池供电");
+    updating=true;snapshot=state;auto features=state["features"].toObject();auto pending=state["_pending"].toObject();auto b=state["battery"].toObject();auto percent=state["batteryPercent"];Ui::text(battery,percent.isDouble()?QString::number(percent.toInt())+"%":"—");Ui::visible(batteryBar,percent.isDouble());Ui::progress(batteryBar,percent.toInt());Ui::text(supply,!state["ac"].isBool()?"供电状态未知":state["ac"].toBool()?"已连接电源":"电池供电");
     QStringList facts;if(b["temperatureC"].isDouble())facts<<QString("电池 %1°C").arg(b["temperatureC"].toDouble(),0,'f',0);auto gpu=features["gpu"].toObject();if(gpu["available"].toBool())for(auto opt:gpu["options"].toArray()){auto o=opt.toObject();if(o["value"]==gpu["value"])facts<<"GPU "+o["label"].toString();}detail->setText(facts.join("   ·   "));battery->setToolTip(b["healthExact"].isDouble()?QString("容量比 %1% · 满充 %2 Wh").arg(b["healthExact"].toDouble(),0,'f',1).arg(b["fullWh"].toDouble(),0,'f',1):QString());
-    for(auto i=controls.begin();i!=controls.end();++i){auto f=features[i.key()].toObject();bool available=f["available"].toBool();int display=pending.contains(i.key())?pending[i.key()].toInt():f["value"].toInt(-1);auto tip=available?QString():f["error"].toString("暂不可用");if(i.value()->toolTip()!=tip)i.value()->setToolTip(tip);
+    for(auto i=controls.begin();i!=controls.end();++i){auto f=features[i.key()].toObject();bool available=f["available"].toBool();int display=pending.contains(i.key())?pending[i.key()].toInt():f["value"].toInt(-1);auto tip=state["stale"].toBool()?"状态已过期："+state["readError"].toString():available?QString():f["error"].toString("暂不可用");if(i.value()->toolTip()!=tip)i.value()->setToolTip(tip);
         if(auto mode=qobject_cast<ModeSlider*>(i.value()))mode->setState(f,state["ac"].toBool(),pending.contains(i.key())?std::optional<int>(display):std::nullopt);
         else if(auto combo=qobject_cast<QComboBox*>(i.value()))Ui::combo(combo,f,display);
         else if(auto toggle=qobject_cast<QCheckBox*>(i.value()))Ui::checked(toggle,available&&display==1);
@@ -105,7 +105,9 @@ void QuickPanel::updateState(const QJsonObject &state){
             for(auto button:i.value()->findChildren<QRadioButton*>())Ui::checked(button,available&&button->property("value").toInt()==display);
         }
     }
-    if(QDateTime::currentMSecsSinceEpoch()>=feedbackUntil){if(message->property("error").toBool()){message->setProperty("error",false);message->style()->unpolish(message);message->style()->polish(message);}Ui::text(message,"更新于 "+QTime::currentTime().toString("HH:mm:ss"));if(!message->toolTip().isEmpty())message->setToolTip(QString());}updating=false;enableControls();
+    if(state["stale"].toBool()){
+        Ui::text(supply,"状态已过期");Ui::text(message,"状态已过期，请刷新后重试");message->setToolTip(state["readError"].toString());
+    }else if(QDateTime::currentMSecsSinceEpoch()>=feedbackUntil){if(message->property("error").toBool()){message->setProperty("error",false);message->style()->unpolish(message);message->style()->polish(message);}Ui::text(message,"更新于 "+QTime::currentTime().toString("HH:mm:ss"));if(!message->toolTip().isEmpty())message->setToolTip(QString());}updating=false;enableControls();
 }
 void QuickPanel::showAt(const QRect &anchor){
     auto screen=QGuiApplication::screenAt(anchor.center());if(!screen)screen=QGuiApplication::primaryScreen();auto work=screen->availableGeometry();setFixedWidth(qMin(408,work.width()-16));setFixedHeight(qMin(680,work.height()-16));
@@ -113,7 +115,7 @@ void QuickPanel::showAt(const QRect &anchor){
     if(y<work.top())y=anchor.bottom()+4;y=qBound(work.top()+4,y,work.bottom()-height()-4);move(x,y);show();raise();activateWindow();
 }
 bool QuickPanel::matches(const QJsonObject &state)const{
-    auto f=state["features"].toObject();for(auto i=controls.begin();i!=controls.end();++i){auto s=f[i.key()].toObject();if(i.value()->isEnabled()!=(!busy&&s["available"].toBool()&&s["enabled"].toBool(true)))return false;if(!s["available"].toBool())continue;
+    auto f=state["features"].toObject();for(auto i=controls.begin();i!=controls.end();++i){auto s=f[i.key()].toObject();if(i.value()->isEnabled()!=(!busy&&Ui::writable(state,i.key())))return false;if(!s["available"].toBool())continue;
         if(auto m=qobject_cast<ModeSlider*>(i.value())){if(m->mode()!=s["value"].toInt())return false;}
         else if(auto c=qobject_cast<QComboBox*>(i.value())){if(c->currentData().toInt()!=s["value"].toInt())return false;}
         else if(auto t=qobject_cast<QCheckBox*>(i.value())){if(t->isChecked()!=(s["value"].toInt()==1))return false;}
@@ -121,7 +123,7 @@ bool QuickPanel::matches(const QJsonObject &state)const{
         else {int checked=-1;for(auto button:i.value()->findChildren<QRadioButton*>())if(button->isChecked())checked=button->property("value").toInt();if(checked!=s["value"].toInt())return false;}
     }return true;
 }
-bool QuickPanel::idleControlsEnabled(const QJsonObject &state)const{auto f=state["features"].toObject();for(auto i=controls.begin();i!=controls.end();++i){auto s=f[i.key()].toObject();if(i.value()->isEnabled()!=(s["available"].toBool()&&s["enabled"].toBool(true)))return false;}return true;}
+bool QuickPanel::idleControlsEnabled(const QJsonObject &state)const{for(auto i=controls.begin();i!=controls.end();++i)if(i.value()->isEnabled()!=Ui::writable(state,i.key()))return false;return true;}
 
 QIcon TrayController::appIcon(){QIcon icon;for(int size:{16,20,24,32,48,64,128,256}){QPixmap image(size,size);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(size/32.,size/32.);p.setPen(Qt::NoPen);p.setBrush(QColor("#278773"));p.drawRoundedRect(QRectF(1,1,30,30),8,8);p.setBrush(Qt::white);p.drawRoundedRect(QRectF(8,8,16,4),1,1);p.drawRoundedRect(QRectF(14,9,4,16),1,1);icon.addPixmap(image);}return icon;}
 TrayController::TrayController(Window *w,bool enabled):QObject(w),window(w),panel(new QuickPanel),icon(new QSystemTrayIcon(this)),menu(new QMenu){
@@ -134,7 +136,7 @@ TrayController::TrayController(Window *w,bool enabled):QObject(w),window(w),pane
     active=enabled&&QSystemTrayIcon::isSystemTrayAvailable();if(active){icon->show();window->setTrayActive(true);qApp->setQuitOnLastWindowClosed(false);}updateTooltip();auto timer=new QTimer(this);timer->setInterval(30000);connect(timer,&QTimer::timeout,this,&TrayController::updateTooltip);timer->start();
 }
 TrayController::~TrayController(){icon->hide();delete panel;delete menu;}
-void TrayController::updateTooltip(){SYSTEM_POWER_STATUS s{};QString tip="ThinkVantage";if(GetSystemPowerStatus(&s)){if(s.BatteryLifePercent<=100)tip+=QString(" · %1%").arg(s.BatteryLifePercent);tip+=s.ACLineStatus==1?" · 接电":" · 电池供电";}tip+="\n单击：快捷面板 · 双击：主窗口";if(icon->toolTip()!=tip)icon->setToolTip(tip);}
+void TrayController::updateTooltip(){SYSTEM_POWER_STATUS s{};QString tip="ThinkVantage";if(GetSystemPowerStatus(&s)){if(s.BatteryLifePercent<=100)tip+=QString(" · %1%").arg(s.BatteryLifePercent);tip+=s.ACLineStatus==255?" · 供电状态未知":s.ACLineStatus==1?" · 接电":" · 电池供电";}tip+="\n单击：快捷面板 · 双击：主窗口";if(icon->toolTip()!=tip)icon->setToolTip(tip);}
 void TrayController::showPanel(){if(!active){window->showPage();return;}auto anchor=icon->geometry();if(anchor.isEmpty())anchor=QRect(QCursor::pos(),QSize(1,1));panel->updateState(window->displayedState());panel->setBusy(window->isApplying());panel->showAt(anchor);window->refreshState();}
 QJsonObject TrayController::verify(const QString &capturePath){
     notified=true;auto state=window->currentState();panel->updateState(state);panel->setBusy(false);QJsonObject checks{{"initialValues",panel->matches(state)}};bool ok=active&&icon->isVisible()&&checks["initialValues"].toBool();panel->setBusy(true);checks["busyValues"]=panel->matches(state);ok=checks["busyValues"].toBool()&&ok;panel->setBusy(false);

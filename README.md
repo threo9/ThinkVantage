@@ -1,10 +1,20 @@
-# ThinkVantage 0.6.0
+# ThinkVantage 0.7.0
 
 面向 Windows 11 x64 的轻量设备设置工具，使用 C++20、Qt 6.12.0 Widgets 和 E:\Qt6 中的 MSVC 143 构建，针对 ThinkBook 16 G6+ IMH / 21LE 适配。
 
 ## 使用
 
 解压整个文件夹后运行 ThinkVantage.exe。主程序已静态链接Qt和C++运行库，vendor仍保留联想原厂DLL及隔离桥接程序。点击“管理员模式”可使用 GPU 模式、超频、开盖开机及 Fn/Ctrl 互换。启动时注册任务栏通知区域的绿色 T 托盘图标。关闭主窗口后继续留在托盘，右键“退出 ThinkVantage”完全退出。不安装系统服务，不自动添加开机启动。
+
+## 场景、充电与状态同步
+
+0.7.0 增加“场景与充电”页：可命名 AC/DC 两套场景，为每套选择 Lenovo ITS、Windows 电源模式、内屏亮度及键盘背光，未选择的项目保持原样。自动场景默认关闭，保存启用后应用当前场景，之后只在供电转换时执行一次；不支持或被禁用的项目跳过，单项失败不会无限重试。手动修改优先，到下次供电转换才重新接管。刷新率保留在显示页单独预览确认，本版不自动切换刷新率。
+
+“临时充满至 100%”会先保存原充电模式，再切到标准充电；到达 100%、拔电、取消或正常退出时尝试恢复。任务需要程序驻留。恢复使用条件写入，不覆盖用户后续成功修改；失败保留待处理任务，异常退出后下次启动读取现值再恢复。原厂夜间充电等独立限制仍可能影响实际充电进度。
+
+配置位于 `%LOCALAPPDATA%\ThinkVantage\ThinkVantage\automation.json`，带版本校验和原子保存；支持导入、导出场景，导入后保持暂停，一次性任务不会从导出文件导入。请求、读回和恢复结果写入同目录 `operations.jsonl`，约 2 MiB 轮转并保留上一份。设备信息页提供当前用户的登录自启动开关，默认关闭，使用当前便携程序路径加 `--tray`；移动程序后应重新设置此开关。
+
+外部供电、恢复、显示、设备、音频与 ITS 状态事件会合并刷新，保留轮询兜底。后台开启自动场景或有充满任务时额外每 30 秒检查一次；其他隐藏状态不增加周期原厂探测。读取失败会标记快照过期并禁用写入。电池详情新增原厂电池功率、制造日期和适配器状态；原始 `AcWattage` 的单位与语义未确认，界面明确保留此说明。独显占用列表由用户点击读取，避免周期探测唤醒独显。
 
 ## 托盘与快捷面板
 
@@ -18,7 +28,7 @@
 
 托盘面板关闭Windows额外添加的矩形弹出窗口投影，保留软件绘制的圆角柔和阴影。原生验证检查窗口样式，并额外保存包含窗口周边的实际屏幕截图，以覆盖控件内部截图看不到的外侧边缘。
 
-快捷面板和主窗口共享异步设置进程、能力判断及回读；操作中的对应控件在两处同步显示等待，成功后同步设备回读结果。退出会等待当前操作结束。面板打开时定时刷新，后台仅轻量更新电量工具提示，不在隐藏状态反复调用原厂探测进程。
+快捷面板和主窗口共享异步设置进程、能力判断及回读；操作中的对应控件在两处同步显示等待，成功后同步设备回读结果。退出会等待当前操作结束。面板打开时定时刷新，后台轻量更新电量工具提示；启用自动场景或充满任务时会进行必要的状态检查。
 
 重复启动会唤起已有窗口，避免重复托盘图标；管理员重启会交接原实例。托盘显示位置由Windows管理，图标可能出现在“隐藏的图标”区域。
 
@@ -83,7 +93,7 @@ cd E:\Code\ThinkVantage
 .\scripts\verify-smooth.ps1
 ```
 
-工具链使用E:\Qt6中的MSVC 143 19.44、Windows SDK 10.0.26100.0、CMake与Ninja；`-QtRoot`可指定工具链根目录，`-QtPrefix`可指定兼容的静态Qt，`-Jobs`限制并行任务。构建仅修改当前进程环境。Qt缓存位于build/qt，应用构建位于build/static-release，发布到dist/ThinkVantage-0.6.0-win64-static。检测到动态Qt时配置会直接报错。
+工具链使用E:\Qt6中的MSVC 143 19.44、Windows SDK 10.0.26100.0、CMake与Ninja；`-QtRoot`可指定工具链根目录，`-QtPrefix`可指定兼容的静态Qt，`-Jobs`限制并行任务。构建仅修改当前进程环境。Qt缓存位于build/qt，应用构建位于build/static-release，发布到dist/ThinkVantage-0.7.0-win64-static。检测到动态Qt时配置会直接报错。
 
 静态Qt保留Core、Gui、Widgets、Network及测试所需组件；关闭OpenGL、Vulkan、ICU、SQL、打印、DBus、SSL、HTTP、网络代理、网络磁盘缓存、SOCKS5、UDP、图形特效、PDF及未使用的Windows主题插件。保留Fusion、Windows平台、字体与无障碍功能，Network中的QLocalServer/QLocalSocket继续承担单实例通信。发布程序只静态导入Windows平台插件，测试程序另导入offscreen插件。配置方式见[Qt静态部署说明](https://doc.qt.io/qt-6/windows-deployment.html)与[Qt配置选项](https://doc.qt.io/qt-6/configure-options.html)。
 
@@ -94,12 +104,14 @@ Qt和应用均启用体积优化与链接时代码生成；应用使用/O1、/GL
 发布目录的relink包含应用对象、protocol.lib和链接响应文件，可用同工具链、兼容配置的修改版Qt重新链接：
 
 ```powershell
-.\dist\ThinkVantage-0.6.0-win64-static\relink\relink.ps1 -QtPrefix '兼容的静态Qt目录'
+.\dist\ThinkVantage-0.7.0-win64-static\relink\relink.ps1 -QtPrefix '兼容的静态Qt目录'
 ```
 
 Qt原始源码：[qtbase 6.12.0](https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz)，SHA-256为a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307；构建不修改Qt源码。Qt许可证、SBOM和重链接材料随静态包保留，不改变联想组件或原创源码的许可。
 
---probe 返回只读 JSON；--ui-smoke --screenshot <绝对路径.png> 导出各页面及完整电源页后退出。内部 --apply 接受固定 ID 与数值，频率另查设备范围和步长。
+命令行统一返回 `schema:1` JSON，失败时 `ok:false` 且退出码为 1。`--help` 列出命令，`--version` 读取版本，`--probe` 返回只读快照，`--list` 返回设置及能力，`--get ID` 查询一项，`--gpu-processes` 显式读取独显占用列表。`--apply ID VALUE` 接受固定 ID 与数值，频率另查设备范围和步长；`--apply-if ID VALUE EXPECTED [ac|dc]` 在写锁内比较旧值和可选供电条件。刷新率写入先输出 preview，15 秒内向 stdin 写入 `keep` 加换行保留，否则恢复；恢复前比较显示器身份与完整模式，不覆盖外部后续变化。GUI 不再因总超时直接终止刷新率 worker。`--ui-smoke --screenshot <绝对路径.png>` 导出各页面后退出，测试模式不执行用户自动化。
+
+恢复依赖 worker 继续运行，无法承诺操作系统崩溃、外部强制终止 worker 或原生显示调用永久挂起时自动恢复。显示亮度与刷新率现已在一次操作内绑定对象，但尚未提供多显示器选择或 DDC/CI。
 
 集成测试默认只读、拒绝非法请求及已禁用的高级控制。--same-value-writes 会将可用设置写回执行前当前值，新增输入与人体感知设置也在其中；仅当超频原本关闭时验证关闭命令，刷新率恢复测试也保持原值。--input-roundtrip 会临时切换背光记忆、Caps/Num Lock 提示和触控板，并逐项立即恢复。所有测试结束后检查设置前后一致。新版验证脚本为 scripts/verify-smooth.ps1；tests/tray_lifecycle.py 验证后台启动、单实例、关闭到托盘、面板、Esc、退出和重启。--tray-smoke --verify-adjustment 会在后台读取期间经实际面板音量滑条请求增加1个百分点，核对排队执行与设备实际档位并恢复原值，仅供开发验证。独立ui_tests只绘制Ultra，不切换硬件性能。
 

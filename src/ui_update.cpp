@@ -26,4 +26,14 @@ void slider(QSlider *widget,const QJsonObject &state,int value){
 }
 void progress(QProgressBar *widget,int value){if(auto smooth=dynamic_cast<SmoothProgress*>(widget))smooth->syncValue(value);else if(widget->value()!=value)widget->setValue(value);}
 bool equalData(QJsonObject a,QJsonObject b){a.remove("timestamp");b.remove("timestamp");a.remove("_pending");b.remove("_pending");return a==b;}
+QJsonObject expiredSnapshot(QJsonObject snapshot,const QString &error,const QString &attemptedAt){
+    snapshot["stale"]=true;snapshot["lastAttemptAt"]=attemptedAt;snapshot["readError"]=error;
+    auto features=snapshot["features"].toObject();
+    for(auto it=features.begin();it!=features.end();++it){auto f=it.value().toObject();f["stale"]=true;f["lastAttemptAt"]=attemptedAt;f["readError"]=error;it.value()=f;}
+    snapshot["features"]=features;snapshot.remove("_pending");return snapshot;
+}
+bool writable(const QJsonObject &snapshot,const QString &id){
+    auto state=snapshot["features"].toObject()[id].toObject();
+    return !snapshot["stale"].toBool()&&!state["stale"].toBool()&&state["available"].toBool()&&state["enabled"].toBool(true);
+}
 }

@@ -1,6 +1,20 @@
-# ThinkVantage 0.6.0 验证记录
+# ThinkVantage 0.7.0 验证记录
 
 日期：2026-11-16，Asia/Hong_Kong。
+
+## 0.7.0 功能补全与审计
+
+本次用户要求完善功能并做代码审计。0.5.3 差距报告作为参考，当前实现与已验证边界详见 [功能补全与审计说明](FEATURE_COMPLETION_0.7.0.md)。以下是本次执行的检查，后面的旧版记录保留其历史日期和验证范围。
+
+- MSVC Release 静态构建及打包通过，5/5 CTest：protocol、ui_updates、vendor_data、refresh_safety、automation。包含 AC/DC 去重、用户覆盖、未知能力、配置校验、充满/取消/拔电/恢复失败/重启/过期缓存恢复的离线回归。
+- 最终包 CLI 合约 19 项通过：schema/ok/退出码、help/version/list/get/gpu-processes、未知命令、参数/数值拒绝、条件不匹配拒绝。记录：`research/v070-cli-contract.json`。
+- 默认只读集成通过，执行前后设置值一致；没有开启 `--same-value-writes` 或 `--input-roundtrip`。沙箱内仅 5 项可读，沙箱外非管理员环境为 26/32 项可读，6 项因管理员要求不可读；这些不是“32 项切换通过”。记录：`research/v070-integration-native-readonly.json`。
+- 非管理员只读原生探测识别 21LE / ThinkBook 16 G6+ IMH，电池原厂与 WMI 字段合并成功，诊断列表为空；有效制造日期为 2024-03-15，容量比约 99.6%。原厂功率或适配器字段未提供有效值时保持未知。记录：`research/v070-probe-native.json`。
+- 在 PATH 仅保留 Windows 系统目录、不指定 Qt 插件路径的环境，原生主窗 6 页/32 控件和托盘 9 控件 smoke 均通过；自动化处于预览模式，不执行用户策略。已查看新增场景页完整/紧凑布局及电源页截图。截图：`docs/screenshots-v070`。
+- 实机显式 GPU 占用查询成功返回 17 个进程及 PID，完整 stdout 可直接作为 JSON 解析。测试发现原厂 DLL 会输出调试日志，已通过私有子进程及结果帧隔离，并新增噪声/坏帧回归；调用失败仍不能被判为空列表。记录：`research/v070-gpu-processes-native.json`。
+- 原生生命周期复验通过：后台启动、第二次启动唤起原实例、关闭留托盘、快捷面板、Esc 收起、退出及再次启动退出。首次尝试遇到已有实例导致测试前提不成立，确认无现有进程后重跑通过；不将该次尝试记为软件崩溃。记录：`research/v070-tray-lifecycle.json`。
+
+未实测真实硬件切换、AC/DC 插拔执行、完整充电至 100%、自启动注册表写入、GPU OC、刷新率的双进程硬件竞争或原生调用永久挂起。本次状态机与事务决策测试不替代这些场景；worker 被外部强制终止、系统崩溃仍无自动恢复保证。
 
 ## 0.6.0 静态链接与Qt裁剪
 

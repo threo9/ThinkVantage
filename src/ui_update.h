@@ -13,4 +13,6 @@ bool editing(QWidget *widget);
 void slider(QSlider *widget,const QJsonObject &state,int value);
 void progress(QProgressBar *widget,int value);
 bool equalData(QJsonObject a,QJsonObject b);
+QJsonObject expiredSnapshot(QJsonObject snapshot,const QString &error,const QString &attemptedAt);
+bool writable(const QJsonObject &snapshot,const QString &id);
 }

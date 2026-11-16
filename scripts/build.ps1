@@ -35,7 +35,7 @@ if($Package){
         Remove-Item -LiteralPath $destination -Recurse -Force
     }
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
-    Copy-Item -LiteralPath $exe,(Join-Path $buildDir 'static-build.json'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'docs\VALIDATION.md'),(Join-Path $projectRoot 'docs\IMPLEMENTATION_EVIDENCE.md') -Destination $destination
+    Copy-Item -LiteralPath $exe,(Join-Path $buildDir 'static-build.json'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'docs\VALIDATION.md'),(Join-Path $projectRoot 'docs\IMPLEMENTATION_EVIDENCE.md'),(Join-Path $projectRoot 'docs\FEATURE_COMPLETION_0.7.0.md') -Destination $destination
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses'),(Join-Path $projectRoot 'vendor') -Destination $destination -Recurse
     # GPUInfo is proprietary and still imports the dynamic VC runtime. Keep
     # these dependencies beside that DLL; the main executable uses /MT.

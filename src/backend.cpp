@@ -1,6 +1,8 @@
 #include "backend.h"
 #include "protocol.h"
 #include "vendor.h"
+#include "vendor_data.h"
+#include "refresh_safety.h"
 #include "input.h"
 #include <windows.h>
 #include <powrprof.h>
@@ -21,6 +23,7 @@
 #include <set>
 #include <array>
 #include <QMap>
+#include <memory>
 using Microsoft::WRL::ComPtr;
 namespace {
 struct Failure { QString message; };
@@ -39,6 +42,17 @@ struct Handle {
     ~Handle(){ if(h && h!=INVALID_HANDLE_VALUE) CloseHandle(h); }
     Handle(const Handle&)=delete;
 };
+struct HardwareWriteLock {
+    Handle mutex{CreateMutexW(nullptr,FALSE,L"Local\\ThinkVantageHardwareWrite")};
+    bool owned=false;
+    HardwareWriteLock(){
+        if(!mutex.h)throw Failure{systemError(GetLastError())};
+        DWORD wait=WaitForSingleObject(mutex.h,0);
+        if(wait!=WAIT_OBJECT_0 && wait!=WAIT_ABANDONED)throw Failure{"另一个设置正在应用，请稍后再试"};
+        owned=true;
+    }
+    ~HardwareWriteLock(){if(owned)ReleaseMutex(mutex.h);}
+};
 struct ServiceHandle {
     SC_HANDLE h;
     explicit ServiceHandle(SC_HANDLE value):h(value) { if(!h) throw Failure{systemError(GetLastError())}; }
@@ -46,7 +60,7 @@ struct ServiceHandle {
 };
 struct ComApartment {
     HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
-    ComApartment(){check(hr); HRESULT s=CoInitializeSecurity(nullptr,-1,nullptr,nullptr,RPC_C_AUTHN_LEVEL_DEFAULT,RPC_C_IMP_LEVEL_IMPERSONATE,nullptr,EOAC_NONE,nullptr); if(s!=RPC_E_TOO_LATE) check(s);}
+    ComApartment(){check(hr); HRESULT s=CoInitializeSecurity(nullptr,-1,nullptr,nullptr,RPC_C_AUTHN_LEVEL_DEFAULT,RPC_C_IMP_LEVEL_IMPERSONATE,nullptr,EOAC_NONE,nullptr); if(FAILED(s)&&s!=RPC_E_TOO_LATE){CoUninitialize();throw Failure{systemError(DWORD(s))};}}
     ~ComApartment(){if(SUCCEEDED(hr))CoUninitialize();}
 };
 struct Bstr {
@@ -97,6 +111,7 @@ QVariant prop(IWbemClassObject *o,const wchar_t *name){
     }
     VariantClear(&v);return r;
 }
+QString wqlQuoted(QString text){text.replace("\\","\\\\");text.replace("'","\\'");return "'"+text+"'";}
 class Wmi {
     ComPtr<IWbemServices> svc;
 public:
@@ -124,8 +139,9 @@ public:
         check(svc->ExecMethod(Bstr(path),Bstr(method),0,nullptr,input.Get(),&output,nullptr));
         auto value=prop(output.Get(),field);if(!value.isValid())throw Failure{"固件方法未返回有效数据"};return value.toUInt();
     }
-    void brightness(int value){
-        auto instance=first("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE");
+    void brightness(int value,const QString &instanceName){
+        if(instanceName.isEmpty())throw Failure{"内屏亮度接口身份未知，请刷新后重试"};
+        auto instance=first("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE AND InstanceName="+wqlQuoted(instanceName));
         QString path=prop(instance.Get(),L"__PATH").toString();
         ComPtr<IWbemClassObject> cls,def,input,output;
         check(svc->GetObject(Bstr("WmiMonitorBrightnessMethods"),0,nullptr,&cls,nullptr));
@@ -142,24 +158,46 @@ public:
         auto rc=prop(output.Get(),L"ReturnValue");if(rc.isValid()&&rc.toUInt()!=0)throw Failure{"亮度接口返回执行错误"};
     }
 };
-ComPtr<IAudioEndpointVolume> endpoint(EDataFlow flow){
-    ComPtr<IMMDeviceEnumerator> e;check(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&e)));
-    ComPtr<IMMDevice> d;check(e->GetDefaultAudioEndpoint(flow,eConsole,&d));
-    ComPtr<IAudioEndpointVolume> v;check(d->Activate(__uuidof(IAudioEndpointVolume),CLSCTX_INPROC_SERVER,nullptr,reinterpret_cast<void**>(v.GetAddressOf())));return v;
-}
+struct AudioEndpoint {
+    EDataFlow flow;
+    QString id;
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IAudioEndpointVolume> volume;
+    static QString deviceId(IMMDevice *device){
+        LPWSTR raw=nullptr;check(device->GetId(&raw));
+        QString result=QString::fromWCharArray(raw);CoTaskMemFree(raw);return result;
+    }
+    explicit AudioEndpoint(EDataFlow direction):flow(direction){
+        check(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&enumerator)));
+        ComPtr<IMMDevice> device;check(enumerator->GetDefaultAudioEndpoint(flow,eConsole,&device));id=deviceId(device.Get());
+        check(device->Activate(__uuidof(IAudioEndpointVolume),CLSCTX_INPROC_SERVER,nullptr,reinterpret_cast<void**>(volume.GetAddressOf())));
+    }
+    void checkCurrent() const {
+        ComPtr<IMMDevice> current;check(enumerator->GetDefaultAudioEndpoint(flow,eConsole,&current));
+        if(deviceId(current.Get())!=id)throw Failure{"默认音频设备已变化，请刷新后重试；旧请求未转移到其他设备"};
+    }
+};
 QJsonArray choices(std::initializer_list<std::pair<int,QString>> items){QJsonArray r;for(const auto &i:items)r.append(QJsonObject{{"value",i.first},{"label",i.second}});return r;}
-QJsonObject state(int value,const QString &provider,const QJsonArray &options={}){return {{"available",true},{"value",value},{"provider",provider},{"options",options}};}
-QJsonObject failure(const QString &why){return {{"available",false},{"value",QJsonValue::Null},{"error",why}};}
+QString observedNow(){return QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);}
+QJsonObject state(int value,const QString &provider,const QJsonArray &options={}){return {{"available",true},{"value",value},{"provider",provider},{"options",options},{"observedAt",observedNow()},{"stale",false},{"observationKind",provider=="Lenovo ITS"?"serviceState":"providerReadback"}};}
+QJsonObject failure(const QString &why){return {{"available",false},{"value",QJsonValue::Null},{"error",why},{"attemptedAt",observedNow()},{"stale",false}};}
 struct Display {
-    QString name;DEVMODEW mode{};
-    Display(){
+    QString name,identity;DEVMODEW mode{};
+    explicit Display(const QString &target={},const QString &expectedIdentity={}){
         for(DWORD i=0;;i++){
             DISPLAY_DEVICEW d{};d.cb=sizeof(d);if(!EnumDisplayDevicesW(nullptr,i,&d,0))break;
-            if(d.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE){name=QString::fromWCharArray(d.DeviceName);break;}
+            QString candidate=QString::fromWCharArray(d.DeviceName);
+            if((d.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) && (target.isEmpty()?(d.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE):candidate==target)){
+                name=candidate;DISPLAY_DEVICEW monitor{};monitor.cb=sizeof(monitor);
+                if(EnumDisplayDevicesW(d.DeviceName,0,&monitor,EDD_GET_DEVICE_INTERFACE_NAME))identity=QString::fromWCharArray(monitor.DeviceID);
+                break;
+            }
         }
         mode.dmSize=sizeof(mode);
-        if(name.isEmpty()||!EnumDisplaySettingsW(reinterpret_cast<LPCWSTR>(name.utf16()),ENUM_CURRENT_SETTINGS,&mode))throw Failure{"无法读取主显示器模式"};
+        if(name.isEmpty()||!EnumDisplaySettingsW(reinterpret_cast<LPCWSTR>(name.utf16()),ENUM_CURRENT_SETTINGS,&mode))throw Failure{"目标显示器已断开或无法读取模式"};
+        if(!expectedIdentity.isEmpty()&&identity!=expectedIdentity)throw Failure{"显示器身份已变化，旧请求失效"};
     }
+    RefreshSafety::Mode signature() const {return {identity,int(mode.dmPelsWidth),int(mode.dmPelsHeight),int(mode.dmBitsPerPel),int(mode.dmDisplayFrequency),int(mode.dmDisplayOrientation),int(mode.dmDisplayFlags),mode.dmPosition.x,mode.dmPosition.y};}
     QList<DEVMODEW> modes() const {
         QList<DEVMODEW> r;
         for(DWORD i=0;;i++){
@@ -177,12 +215,37 @@ struct Display {
         }throw Failure{"此刷新率不在当前分辨率的可用列表中"};
     }
 };
+struct RefreshTransaction {
+    std::unique_ptr<HardwareWriteLock> lock;
+    QString token=QUuid::createUuid().toString(QUuid::WithoutBraces);
+    Display original;
+    RefreshSafety::Mode expected;
+    RefreshTransaction(std::unique_ptr<HardwareWriteLock> ownership,const Display &display,int requested):lock(std::move(ownership)),original(display),expected(display.signature()){
+        if(original.identity.isEmpty())throw Failure{"无法确认显示器身份，暂不允许刷新率预览"};
+        expected.hz=requested;
+    }
+};
+std::unique_ptr<RefreshTransaction> refreshTransaction;
+QJsonObject completeRefresh(RefreshTransaction &transaction,bool keep){
+    QJsonObject result{{"schema",1},{"ok",false},{"id","refresh"},{"operationToken",transaction.token}};
+    try{
+        Display current(transaction.original.name,transaction.original.identity);
+        auto decision=RefreshSafety::decide(transaction.token,transaction.token,transaction.expected,current.signature(),keep);
+        if(decision==RefreshSafety::Decision::Superseded){result["superseded"]=true;result["error"]="显示状态已被外部更改，旧预览不再覆盖当前设置";return result;}
+        if(decision==RefreshSafety::Decision::Keep){result["ok"]=true;result["kept"]=true;result["message"]="已保留新刷新率。";return result;}
+        current.set(int(transaction.original.mode.dmDisplayFrequency));
+        Display after(transaction.original.name,transaction.original.identity);
+        if(!(after.signature()==transaction.original.signature()))throw Failure{"恢复后的显示模式未确认"};
+        result["ok"]=true;result["restored"]=true;result["message"]="已恢复原刷新率。";
+    }catch(const Failure &f){result["error"]="刷新率恢复未完成："+f.message;result["unknownOutcome"]=true;}
+    return result;
+}
 const GUID powerGuids[]={
     {0x961cc777,0x2547,0x4f9d,{0x81,0x74,0x7d,0x86,0x18,0x1b,0x8a,0x7a}},
     {0x00000000,0x0000,0x0000,{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}},
     {0xded574b5,0x45a0,0x4f42,{0x87,0x37,0x46,0x34,0x5c,0x09,0xc2,0x38}}
 };
-bool acOnline(){SYSTEM_POWER_STATUS s{};return GetSystemPowerStatus(&s)&&s.ACLineStatus==1;}
+bool acOnline(){SYSTEM_POWER_STATUS s{};if(!GetSystemPowerStatus(&s)||s.ACLineStatus>1)throw Failure{"当前供电状态未知，请稍后重试"};return s.ACLineStatus==1;}
 struct Firmware {
     Handle token{nullptr};TOKEN_PRIVILEGES previous{};DWORD previousSize=sizeof(previous);bool adjusted=false;
     std::array<unsigned char,4> data{};DWORD attributes=0;
@@ -216,7 +279,7 @@ QJsonObject ocState(){
     }
     return r;
 }
-QJsonObject feature(const QString &id,Energy &e){
+QJsonObject feature(const QString &id,Energy &e,const AudioEndpoint *audioBinding=nullptr,const Display *displayBinding=nullptr,const QString &brightnessBinding={},std::optional<bool> powerBinding=std::nullopt){
     if(id=="backlightRemember"){
         if(e.query(0x83102154,1)!=3)throw Failure{"固件未声明支持背光记忆"};
         auto raw=e.query(0x83102154,2);if(raw!=1&&raw!=3)throw Failure{"背光记忆状态未知"};
@@ -294,24 +357,26 @@ QJsonObject feature(const QString &id,Energy &e){
         return state(*value,"Lenovo EnergyDrv",a);
     }
     if(id=="power"){
-        GUID g{};DWORD err=acOnline()?PowerGetUserConfiguredACPowerMode(&g):PowerGetUserConfiguredDCPowerMode(&g);if(err!=ERROR_SUCCESS)throw Failure{systemError(err)};
+        bool ac=powerBinding?*powerBinding:acOnline();GUID g{};DWORD err=ac?PowerGetUserConfiguredACPowerMode(&g):PowerGetUserConfiguredDCPowerMode(&g);if(err!=ERROR_SUCCESS)throw Failure{systemError(err)};
         int value=-1;for(int i=0;i<3;i++)if(IsEqualGUID(g,powerGuids[i]))value=i;
         if(value<0)throw Failure{"当前电源计划不支持标准 Windows 电源模式"};
-        return state(value,"Windows",choices({{0,"最佳能效"},{1,"平衡"},{2,"最佳性能"}}));
+        auto result=state(value,"Windows",choices({{0,"最佳能效"},{1,"平衡"},{2,"最佳性能"}}));result["ac"]=ac;return result;
     }
     if(id=="brightness"){
-        Wmi w;auto o=w.first("SELECT * FROM WmiMonitorBrightness WHERE Active=TRUE");auto v=prop(o.Get(),L"CurrentBrightness");
-        if(!v.isValid())throw Failure{"未读取到内置屏幕亮度"};return state(v.toInt(),"Windows WMI");
+        Wmi w;auto o=w.first("SELECT * FROM WmiMonitorBrightness WHERE Active=TRUE"+(brightnessBinding.isEmpty()?QString():" AND InstanceName="+wqlQuoted(brightnessBinding)));auto v=prop(o.Get(),L"CurrentBrightness");
+        if(!v.isValid())throw Failure{"未读取到内置屏幕亮度"};auto result=state(v.toInt(),"Windows WMI");result["instanceName"]=prop(o.Get(),L"InstanceName").toString();return result;
     }
     if(id=="refresh"){
-        Display d;std::set<int> rates;for(const auto &m:d.modes())rates.insert(int(m.dmDisplayFrequency));
+        Display d=displayBinding?Display(displayBinding->name,displayBinding->identity):Display();std::set<int> rates;for(const auto &m:d.modes())rates.insert(int(m.dmDisplayFrequency));
         QJsonArray opts;for(int hz:rates)opts.append(QJsonObject{{"value",hz},{"label",QString::number(hz)+" Hz"}});
-        return state(int(d.mode.dmDisplayFrequency),"Windows Display",opts);
+        auto result=state(int(d.mode.dmDisplayFrequency),"Windows Display",opts);result["displaySource"]=d.name;result["displayIdentity"]=d.identity;return result;
     }
     if(id=="volume"||id=="speakerMute"||id=="micMute"){
-        auto audio=endpoint(id=="micMute"?eCapture:eRender);
+        std::unique_ptr<AudioEndpoint> local;if(!audioBinding){local=std::make_unique<AudioEndpoint>(id=="micMute"?eCapture:eRender);audioBinding=local.get();}
+        audioBinding->checkCurrent();auto audio=audioBinding->volume;
         if(id=="volume"){
             float v=0;check(audio->GetMasterVolumeLevelScalar(&v));auto r=state(qRound(v*100),"Windows Core Audio");
+            r["endpointId"]=audioBinding->id;r["role"]="eConsole";r["flow"]="render";
             UINT index=0,steps=0;DWORD hardware=0;float low=0,high=0,step=0;
             if(SUCCEEDED(audio->GetVolumeStepInfo(&index,&steps))){r["stepIndex"]=int(index);r["steps"]=int(steps);}
             if(SUCCEEDED(audio->QueryHardwareSupport(&hardware)))r["hardwareVolume"]=(hardware&ENDPOINT_HARDWARE_SUPPORT_VOLUME)!=0;
@@ -319,7 +384,7 @@ QJsonObject feature(const QString &id,Energy &e){
             float db=0;if(SUCCEEDED(audio->GetMasterVolumeLevel(&db)))r["currentDb"]=db;
             return r;
         }
-        BOOL mute=FALSE;check(audio->GetMute(&mute));return state(mute?1:0,"Windows Core Audio",choices({{0,"关闭"},{1,"开启"}}));
+        BOOL mute=FALSE;check(audio->GetMute(&mute));auto result=state(mute?1:0,"Windows Core Audio",choices({{0,"关闭"},{1,"开启"}}));result["endpointId"]=audioBinding->id;result["role"]="eConsole";result["flow"]=id=="micMute"?"capture":"render";return result;
     }
     throw Failure{"未知功能"};
 }
@@ -333,60 +398,73 @@ bool isWindows11(){
 }
 bool relaunchElevated(){QString path=QCoreApplication::applicationFilePath();auto rc=ShellExecuteW(nullptr,L"runas",reinterpret_cast<LPCWSTR>(path.utf16()),L"--elevated-handoff",nullptr,SW_SHOWNORMAL);return reinterpret_cast<INT_PTR>(rc)>32;}
 QJsonObject read(){
-    QJsonObject r{{"schema",1},{"timestamp",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},{"administrator",isAdministrator()},{"windows11",isWindows11()}};
+    QJsonObject r{{"schema",1},{"ok",false},{"timestamp",observedNow()},{"administrator",isAdministrator()},{"windows11",isWindows11()}};
     r["model"]=reg(HKEY_LOCAL_MACHINE,L"HARDWARE\\DESCRIPTION\\System\\BIOS",L"SystemProductName").toString();
     r["product"]=reg(HKEY_LOCAL_MACHINE,L"HARDWARE\\DESCRIPTION\\System\\BIOS",L"SystemFamily").toString();
     SYSTEM_POWER_STATUS p{};
-    if(GetSystemPowerStatus(&p)){r["ac"]=p.ACLineStatus==1;r["batteryPercent"]=p.BatteryLifePercent<=100?QJsonValue(p.BatteryLifePercent):QJsonValue(QJsonValue::Null);}
+    if(GetSystemPowerStatus(&p)){r["ac"]=p.ACLineStatus<=1?QJsonValue(p.ACLineStatus==1):QJsonValue(QJsonValue::Null);r["batteryPercent"]=p.BatteryLifePercent<=100?QJsonValue(p.BatteryLifePercent):QJsonValue(QJsonValue::Null);}
     try{
         ComApartment apartment;Energy e;QJsonObject features;
-        for(const auto &id:ids+Input::ids()+QStringList{"fnCtrlSwap"}){try{features[id]=feature(id,e);}catch(const Failure &f){features[id]=failure(f.message);}}
+        bool partial=false;
+        for(const auto &id:ids+Input::ids()+QStringList{"fnCtrlSwap"}){
+            QJsonObject item;
+            try{item=feature(id,e);item["observedAt"]=observedNow();item["stale"]=false;if(!item.contains("observationKind"))item["observationKind"]="providerReadback";}
+            catch(const Failure &f){item=failure(f.message);partial=true;}
+            catch(const std::exception &err){item=failure(QString::fromUtf8(err.what()));partial=true;}
+            features[id]=item;
+        }
         r["features"]=features;
+        r["ok"]=true;r["partial"]=partial;r["stale"]=false;r["observedAt"]=observedNow();
         QJsonObject battery;
         try{Wmi w;auto full=w.first("SELECT * FROM BatteryFullChargedCapacity WHERE Active=TRUE");auto design=w.first("SELECT * FROM BatteryStaticData WHERE Active=TRUE");
             double f=prop(full.Get(),L"FullChargedCapacity").toDouble(),d=prop(design.Get(),L"DesignedCapacity").toDouble();
             if(f>0&&d>0){battery["fullWh"]=f/1000;battery["designWh"]=d/1000;battery["health"]=qRound(f*100/d);}
             try{auto cycle=w.first("SELECT * FROM BatteryCycleCount WHERE Active=TRUE");auto c=prop(cycle.Get(),L"CycleCount");if(c.isValid())battery["cycles"]=c.toInt();}catch(const Failure&){}
         }catch(const Failure&){}
-        auto vendor=Vendor::probe();auto vb=vendor["battery"].toObject();
-        auto copy=[&](const char *from,const char *to,double scale=1.){if(vb[from].isDouble())battery[to]=vb[from].toDouble()/scale;};
-        copy("FullChargeCapacity","fullWh",1000);copy("DesignCapacity","designWh",1000);copy("RemainingCapacity","currentWh",1000);copy("Temperature","temperatureC");copy("CycleCount","cycles");copy("Voltage","voltageV",1000);copy("Current","currentMa");copy("DesignVoltage","designVoltageV",1000);copy("ChargeStatus","chargeStatus");
-        if(vb["DeviceChemistry"].isString())battery["chemistry"]=vb["DeviceChemistry"];
-        if(vb["ManufactureName"].isString())battery["manufacturer"]=vb["ManufactureName"];
-        if(vendor["storage80"].isBool())battery["storage80"]=vendor["storage80"];
-        if(battery["fullWh"].toDouble()>0&&battery["designWh"].toDouble()>0)battery["healthExact"]=battery["fullWh"].toDouble()*100/battery["designWh"].toDouble();
-        battery["provider"]=vb["Temperature"].isDouble()?"Lenovo IdeaBatteryAgent":"Windows WMI";
-        if(vendor.contains("error"))battery["vendorError"]=vendor["error"];
-        r["battery"]=battery;
-    }catch(const Failure &f){r["error"]=f.message;}
+        r["battery"]=VendorData::mergeBattery(battery,Vendor::probe());
+    }catch(const Failure &f){r["ok"]=r.contains("features");r["partial"]=true;r["error"]=f.message;}
+    catch(const std::exception &err){r["ok"]=r.contains("features");r["partial"]=true;r["error"]=QString::fromUtf8(err.what());}
     return r;
 }
-QJsonObject apply(const QString &id,int value){
-    QJsonObject r{{"ok",false},{"id",id},{"requested",value}};
-    std::optional<int> refreshPrevious;
+QJsonObject apply(const QString &id,int value,std::optional<int> expectedPrevious,std::optional<bool> expectedAc){
+    QJsonObject r{{"schema",1},{"ok",false},{"id",id},{"requested",value},{"startedAt",observedNow()}};
+    std::unique_ptr<RefreshTransaction> preview;
+    bool writeAttempted=false;
     std::optional<double> volumeTargetDb;
     if(!Protocol::allowedRequest(id,value)){r["error"]="请求不在允许的设置范围内";return r;}
     try{
         if(!isWindows11())throw Failure{"仅支持 Windows 11"};
-        Handle mutex(CreateMutexW(nullptr,FALSE,L"Local\\ThinkVantageHardwareWrite"));
-        if(!mutex.h)throw Failure{systemError(GetLastError())};
-        DWORD wait=WaitForSingleObject(mutex.h,0);
-        if(wait!=WAIT_OBJECT_0 && wait!=WAIT_ABANDONED)throw Failure{"另一个设置正在应用，请稍后再试"};
-        struct Unlock{HANDLE h;~Unlock(){ReleaseMutex(h);}} unlock{mutex.h};
+        if(refreshTransaction)throw Failure{"刷新率预览仍在等待确认"};
+        auto lock=std::make_unique<HardwareWriteLock>();
         ComApartment apartment;Energy e;
+        auto checkSupply=[&]{
+            if(!expectedAc)return;
+            r["expectedAc"]=*expectedAc;
+            try{if(acOnline()!=*expectedAc){r["conflict"]=true;throw Failure{"供电状态已变化，条件操作已取消"};}}
+            catch(const Failure &){r["conflict"]=true;throw;}
+        };
+        checkSupply();
+        std::optional<bool> powerSupply;if(id=="power")powerSupply=acOnline();
+        std::unique_ptr<AudioEndpoint> audio;
+        if(id=="volume"||id=="speakerMute"||id=="micMute")audio=std::make_unique<AudioEndpoint>(id=="micMute"?eCapture:eRender);
+        std::unique_ptr<Display> display;if(id=="refresh")display=std::make_unique<Display>();
         // Read and validate fresh capability state in the worker before every write.
-        auto before=feature(id,e);
-        if(id=="backlightRemember")e.send({0x83102154,value?19u:3u,4});
+        auto before=feature(id,e,audio.get(),display.get(),{},powerSupply);
+        QString brightnessTarget=id=="brightness"?before["instanceName"].toString():QString();
+        if(expectedPrevious&&before["value"].toInt(-999)!=*expectedPrevious){r["conflict"]=true;r["observed"]=before["value"];r["error"]="设置已被用户或其他程序更改，条件操作已取消";return r;}
+        checkSupply();
+        if(expectedAc&&powerSupply&&*expectedAc!=*powerSupply){r["conflict"]=true;throw Failure{"供电状态在读取前后已变化，条件操作已取消"};}
+        if(id=="backlightRemember"){writeAttempted=true;e.send({0x83102154,value?19u:3u,4});}
         else if(id=="fnCtrlSwap"){
-            Wmi w;auto rc=w.invoke("LENOVO_BIOS_ASSISTANT","SetValue",{{"IndexData",1},{"ValueData",uint32_t(value)}},L"ReturnData");
+            Wmi w;writeAttempted=true;auto rc=w.invoke("LENOVO_BIOS_ASSISTANT","SetValue",{{"IndexData",1},{"ValueData",uint32_t(value)}},L"ReturnData");
             if(!(rc&0x80000000u))throw Failure{"固件拒绝 Fn 与 Ctrl 互换"};
         }
-        else if(Input::owns(id))Input::set(id,value);
-        else if(id=="flip"){Firmware f;f.set(value);}
+        else if(Input::owns(id)){writeAttempted=true;Input::set(id,value);}
+        else if(id=="flip"){Firmware f;writeAttempted=true;f.set(value);}
         else if(id=="gpu"){
             auto opts=before["options"].toArray();bool offered=false;for(auto opt:opts)if(opt.toObject()["value"].toInt()==value)offered=true;if(!offered)throw Failure{"此 GPU 模式不受支持"};
             if(value==1){try{if(Vendor::gpuBusy())throw Failure{"独显正在被应用占用，请关闭使用独显的程序后重试"};}catch(const std::exception &err){throw Failure{QString::fromUtf8(err.what())};}}
-            Wmi w;w.invoke("LENOVO_GAMEZONE_DATA","SetIGPUModeStatus",{{"mode",uint32_t(value)}});
+            Wmi w;writeAttempted=true;w.invoke("LENOVO_GAMEZONE_DATA","SetIGPUModeStatus",{{"mode",uint32_t(value)}});
         }
         else if(id=="oc"||id=="ocCore"||id=="ocMemory"){
             auto d=before["details"].toObject();int enabled=d["rawState"].toInt()==2?1:0,core=d["core"].toInt(),memory=d["memory"].toInt();
@@ -394,13 +472,39 @@ QJsonObject apply(const QString &id,int value){
             else {QString key=id=="ocCore"?"core":"memory";int min=d[key+"Min"].toInt(),max=d[key+"Max"].toInt(),step=d[key+"Step"].toInt();if(!enabled||!Protocol::validOffset(value,min,max,step))throw Failure{"超频未开启，或频率偏移超出设备范围"};if(id=="ocCore")core=value;else memory=value;}
             if(enabled&&!acOnline())throw Failure{"GPU 超频需要连接电源"};
             if(!enabled){core=0;memory=0;}
-            // The screenshot's coupled policy: adaptive mode becomes performance.
-            auto original=reg(HKEY_LOCAL_MACHINE,itsPath,L"ITS_CurrentSettingV");bool changedMode=false;
-            if(enabled&&original.isValid()&&original.toInt()==0){ServiceHandle scm(OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT));ServiceHandle service(OpenServiceW(scm.h,L"LenovoProcessManagement",SERVICE_USER_DEFINED_CONTROL));SERVICE_STATUS s{};if(!ControlService(service.h,165,&s))throw Failure{systemError(GetLastError())};changedMode=true;QThread::msleep(250);}
+            auto original=reg(HKEY_LOCAL_MACHINE,itsPath,L"ITS_CurrentSettingV");bool changedMode=false,ocSent=false;
+            auto setMode=[](int mode){
+                auto command=Protocol::itsCommand(mode);if(!command)throw Failure{"无效的 ITS 恢复档位"};
+                ServiceHandle scm(OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT));ServiceHandle service(OpenServiceW(scm.h,L"LenovoProcessManagement",SERVICE_USER_DEFINED_CONTROL));SERVICE_STATUS s{};
+                if(!ControlService(service.h,DWORD(*command),&s))throw Failure{systemError(GetLastError())};
+                QElapsedTimer wait;wait.start();
+                do{auto current=reg(HKEY_LOCAL_MACHINE,itsPath,L"ITS_CurrentSettingV");if(current.isValid()&&current.toInt()==mode)return;QThread::msleep(100);}while(wait.elapsed()<3000);
+                throw Failure{"ITS 服务未确认目标档位"};
+            };
             try{
+                if(enabled&&original.isValid()&&original.toInt()==0){changedMode=true;writeAttempted=true;setMode(3);}
+                ocSent=true;writeAttempted=true;
                 Vendor::setOc(enabled,core,memory);auto after=ocState();
                 if(after["rawState"].toInt()!=(enabled?2:1)||after["core"].toInt()!=core||after["memory"].toInt()!=memory)throw Failure{"原厂 GPU 插件未确认超频设置"};
-            }catch(...){if(changedMode){try{ServiceHandle scm(OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT));ServiceHandle service(OpenServiceW(scm.h,L"LenovoProcessManagement",SERVICE_USER_DEFINED_CONTROL));SERVICE_STATUS s{};ControlService(service.h,163,&s);}catch(...){}}throw;}
+                r["ocReadback"]=after;r["itsTransitionVerified"]=changedMode;
+            }catch(...){
+                QJsonObject recovery;
+                if(ocSent){
+                    try{Vendor::setOc(d["rawState"].toInt()==2?1:0,d["core"].toInt(),d["memory"].toInt());auto restored=ocState();
+                        if(restored["rawState"]!=d["rawState"]||restored["core"]!=d["core"]||restored["memory"]!=d["memory"])throw Failure{"原超频参数未恢复"};
+                        recovery["ocRestored"]=true;
+                    }catch(const Failure &f){recovery["ocRestored"]=false;recovery["ocError"]=f.message;}catch(const std::exception &err){recovery["ocRestored"]=false;recovery["ocError"]=QString::fromUtf8(err.what());}
+                }
+                if(changedMode){
+                    try{auto current=reg(HKEY_LOCAL_MACHINE,itsPath,L"ITS_CurrentSettingV");
+                        if(!current.isValid())throw Failure{"ITS 当前档位未知，未覆盖恢复"};
+                        if(current.toInt()==3)setMode(original.toInt());
+                        else if(current.toInt()!=original.toInt())throw Failure{"ITS 档位已被外部更改，未覆盖恢复"};
+                        recovery["itsRestored"]=true;
+                    }catch(const Failure &f){recovery["itsRestored"]=false;recovery["itsError"]=f.message;}
+                }
+                r["recovery"]=recovery;throw;
+            }
         }
         else if(id=="its"){
             auto command=Protocol::itsCommand(value);if(!command)throw Failure{"此性能档位尚未开放"};
@@ -408,50 +512,58 @@ QJsonObject apply(const QString &id,int value){
             bool offered=false;for(auto o:before["options"].toArray())if(o.toObject()["value"].toInt()==value)offered=true;if(!offered)throw Failure{"固件未声明支持此性能档位"};
             ServiceHandle scm(OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT));
             ServiceHandle svc(OpenServiceW(scm.h,L"LenovoProcessManagement",SERVICE_USER_DEFINED_CONTROL));
-            SERVICE_STATUS status{};if(!ControlService(svc.h,DWORD(*command),&status))throw Failure{systemError(GetLastError())};
+            SERVICE_STATUS status{};writeAttempted=true;if(!ControlService(svc.h,DWORD(*command),&status))throw Failure{systemError(GetLastError())};
         }else if(id=="charge"){
             auto commands=Protocol::chargeCommands(e.query(Protocol::Charge,255,1),value);if(commands.isEmpty())throw Failure{"固件不支持此充电模式"};
-            for(const auto &c:commands)e.send(c);
+            for(const auto &c:commands){writeAttempted=true;e.send(c);}
         }else if(id=="fnlock"||id=="usbAc"||id=="usbDc"){
             uint32_t on=id=="fnlock"?14:id=="usbAc"?10:19,off=id=="fnlock"?15:id=="usbAc"?11:18;
-            e.send({Protocol::Settings,value?on:off,4});
-        }else if(id=="night")e.send({Protocol::Night,value?0x80000012u:0x12u,4});
+            writeAttempted=true;e.send({Protocol::Settings,value?on:off,4});
+        }else if(id=="night"){writeAttempted=true;e.send({Protocol::Night,value?0x80000012u:0x12u,4});}
         else if(id=="backlight"){
             auto levels=Protocol::backlightLevels(e.query(Protocol::Backlight,1));auto cmd=levels?Protocol::backlightCommand(*levels,value):std::nullopt;
-            if(!cmd)throw Failure{"背光档位不受支持"};e.send(*cmd);
+            if(!cmd)throw Failure{"背光档位不受支持"};writeAttempted=true;e.send(*cmd);
         }else if(id=="power"){
-            DWORD err=acOnline()?PowerSetUserConfiguredACPowerMode(&powerGuids[value]):PowerSetUserConfiguredDCPowerMode(&powerGuids[value]);if(err!=ERROR_SUCCESS)throw Failure{systemError(err)};
-        }else if(id=="brightness"){Wmi w;w.brightness(value);}
-        else if(id=="refresh"){refreshPrevious=before["value"].toInt();Display d;d.set(value);}
-        else {auto a=endpoint(id=="micMute"?eCapture:eRender);if(id=="volume"){check(a->SetMasterVolumeLevelScalar(float(value)/100,nullptr));float db=0;if(SUCCEEDED(a->GetMasterVolumeLevel(&db)))volumeTargetDb=db;}else check(a->SetMute(value!=0,nullptr));}
+            checkSupply();writeAttempted=true;DWORD err=*powerSupply?PowerSetUserConfiguredACPowerMode(&powerGuids[value]):PowerSetUserConfiguredDCPowerMode(&powerGuids[value]);if(err!=ERROR_SUCCESS)throw Failure{systemError(err)};
+        }else if(id=="brightness"){Wmi w;writeAttempted=true;w.brightness(value,brightnessTarget);}
+        else if(id=="refresh"){
+            Display current(display->name,display->identity);
+            if(!(current.signature()==display->signature())){r["conflict"]=true;throw Failure{"显示模式在设置前已变化，请刷新后重试"};}
+            preview=std::make_unique<RefreshTransaction>(std::move(lock),*display,value);
+            writeAttempted=true;display->set(value);
+        }
+        else {audio->checkCurrent();auto a=audio->volume;writeAttempted=true;if(id=="volume"){check(a->SetMasterVolumeLevelScalar(float(value)/100,nullptr));float db=0;if(SUCCEEDED(a->GetMasterVolumeLevel(&db)))volumeTargetDb=db;}else check(a->SetMute(value!=0,nullptr));}
         QElapsedTimer timer;timer.start();
         do{
-            QThread::msleep(150);auto after=feature(id,e);
+            QThread::msleep(150);auto after=feature(id,e,audio.get(),display.get(),brightnessTarget,powerSupply);
             bool exact=after["value"].toInt(-999)==value;
             bool rounded=id=="volume"&&volumeTargetDb&&after["hardwareVolume"].toBool()&&after["currentDb"].isDouble()&&after["minDb"].isDouble()&&after["maxDb"].isDouble()&&after["stepDb"].isDouble()&&Protocol::nearestVolumeStep(*volumeTargetDb,after["currentDb"].toDouble(),after["minDb"].toDouble(),after["maxDb"].toDouble(),after["stepDb"].toDouble());
-            if(exact||rounded){r["ok"]=true;r["state"]=after;r["previous"]=before["value"];if(!exact){r["hardwareRounded"]=true;r["message"]=QString("音量已调整为 %1%（设备可用档位）。").arg(after["value"].toInt());}return r;}
+            if(exact||rounded){r["ok"]=true;r["state"]=after;r["previous"]=before["value"];r["completedAt"]=observedNow();r["observationKind"]=after["observationKind"];
+                if(preview){r["operationToken"]=preview->token;r["displayIdentity"]=preview->original.identity;refreshTransaction=std::move(preview);}
+                if(!exact){r["hardwareRounded"]=true;r["message"]=QString("音量已调整为 %1%（设备可用档位）。").arg(after["value"].toInt());}return r;}
         }while(timer.elapsed()<3000);
         throw Failure{"设置已发送，但设备未确认目标状态。请刷新检查当前状态。"};
     }catch(const std::exception &err){r["error"]=QString::fromUtf8(err.what());}
-    catch(const Failure &f){
-        r["error"]=f.message;
-        if(refreshPrevious){try{Display d;d.set(*refreshPrevious);r["error"]=f.message+" 已恢复原刷新率。";}catch(const Failure &restore){r["error"]=f.message+" 恢复失败："+restore.message;}}
-    }
+    catch(const Failure &f){r["error"]=f.message;}
+    if(writeAttempted)r["unknownOutcome"]=true;
+    if(preview){r["recovery"]=completeRefresh(*preview,false);if(r["recovery"].toObject()["restored"].toBool())r["unknownOutcome"]=false;}
+    r["completedAt"]=observedNow();
     return r;
 }
-QJsonObject confirmRefresh(int previous){
+QJsonObject confirmRefresh(const QString &operationToken){
     // The device worker survives GUI failure. A broken stdin pipe or a timeout
     // restores the previous mode without depending on the UI event loop.
+    if(!refreshTransaction)return {{"schema",1},{"ok",false},{"error","没有待确认的刷新率预览"}};
+    auto transaction=std::move(refreshTransaction);
+    if(operationToken!=transaction->token){auto result=completeRefresh(*transaction,false);result["ok"]=false;result["error"]="刷新率操作标识不匹配，已尝试恢复原状态";return result;}
     bool keep=false;QElapsedTimer timer;timer.start();
     HANDLE input=GetStdHandle(STD_INPUT_HANDLE);QByteArray line;
     while(timer.elapsed()<15000){
         DWORD available=0;
         if(!PeekNamedPipe(input,nullptr,0,nullptr,&available,nullptr))break;
-        if(available){char buf[64];DWORD n=0;if(!ReadFile(input,buf,qMin<DWORD>(available,64),&n,nullptr)||!n)break;line.append(buf,int(n));if(line.contains('\n')){keep=line.trimmed()=="keep";break;}}
+        if(available){char buf[64];DWORD n=0;if(!ReadFile(input,buf,qMin<DWORD>(available,64),&n,nullptr)||!n)break;line.append(buf,int(n));if(line.size()>256)break;if(line.contains('\n')){keep=line.trimmed()=="keep";break;}}
         QThread::msleep(80);
     }
-    if(keep)return {{"ok",true},{"message","已保留新刷新率。"}};
-    try{Display d;d.set(previous);Display after;if(int(after.mode.dmDisplayFrequency)!=previous)throw Failure{"恢复后的刷新率未确认"};return {{"ok",true},{"message","已恢复原刷新率。"}};}
-    catch(const Failure &f){return {{"ok",false},{"error","刷新率自动恢复失败："+f.message}};}
+    return completeRefresh(*transaction,keep);
 }
 }

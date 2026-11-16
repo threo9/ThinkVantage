@@ -2,11 +2,13 @@
 #include "window_widgets.h"
 #include "backend.h"
 #include "mode_slider.h"
+#include "event_hub.h"
+#include "automation_ui.h"
 #include <QDesktopServices>
 #include <QJsonDocument>
 
 namespace {
-QLabel *label(const QString &text,const char *name=nullptr){auto w=new QLabel(text);if(name)w->setObjectName(name);w->setWordWrap(true);return w;}
+QLabel *label(const QString &text,const char *name=nullptr){auto w=new QLabel(text);w->setTextFormat(Qt::PlainText);if(name)w->setObjectName(name);w->setWordWrap(true);return w;}
 QVBoxLayout *body(QWidget *p){return qobject_cast<QVBoxLayout*>(p->layout());}
 void insert(QWidget *p,QWidget *w){body(p)->insertWidget(body(p)->count()-1,w);}
 void divider(QWidget *p){
@@ -32,7 +34,7 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     auto identity=new QHBoxLayout;auto logo=label("T","logo");logo->setFixedSize(34,34);logo->setAlignment(Qt::AlignCenter);identity->addWidget(logo);auto brand=new QVBoxLayout;brand->setSpacing(1);brand->addWidget(label("ThinkVantage","brand"));brand->addWidget(label("设备控制台","subbrand"));identity->addLayout(brand);identity->addStretch();nav->addLayout(identity);nav->addSpacing(32);
     auto list=new QListWidget;list->setObjectName("navigation");list->setSpacing(5);list->setIconSize(QSize(20,20));
     QStringList names{"电源与性能","键盘与触控板","显示与感知","声音","设备信息"};for(int i=0;i<names.size();++i)list->addItem(new QListWidgetItem(navigationIcon(i),names[i]));nav->addWidget(list,1);
-    auto sideNote=label("ThinkVantage  0.6.0\nWindows 11","sideNote");nav->addWidget(sideNote);outer->addWidget(sidebar);
+    auto sideNote=label("ThinkVantage  "+QCoreApplication::applicationVersion()+"\nWindows 11","sideNote");nav->addWidget(sideNote);outer->addWidget(sidebar);
     auto content=new QWidget;auto column=new QVBoxLayout(content);column->setContentsMargins(30,20,26,14);column->setSpacing(14);
     auto header=new QHBoxLayout;header->setSpacing(8);device=label("正在连接设备…","device");header->addWidget(device,1);
     admin=new QPushButton("管理员模式");admin->setObjectName("admin");admin->setToolTip("以管理员身份重新打开，使用需要提升权限的设备设置");connect(admin,&QPushButton::clicked,this,[this]{if(Backend::relaunchElevated())requestQuit();else status->setText("未完成管理员启动。");});header->addWidget(admin);
@@ -46,12 +48,18 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     batteryChart=new BatteryChart;bc->addWidget(batteryChart);
     auto all=new QPushButton("电池详情  ▸");all->setObjectName("textButton");bc->addWidget(all,0,Qt::AlignLeft);
     batteryExtra=new QWidget;auto details=new QGridLayout(batteryExtra);details->setContentsMargins(0,6,0,6);details->setHorizontalSpacing(24);details->setVerticalSpacing(9);
-    int cell=0;for(const auto &item:QList<QPair<QString,QString>>{{"charge","充电状态"},{"health","容量比"},{"cycles","充电循环"},{"chemistry","电池类型"},{"adapter","电源适配器"},{"voltage","电压"},{"current","电流"},{"manufacturer","制造商"},{"designVoltage","设计电压"}}){auto pair=new QWidget;auto pl=new QHBoxLayout(pair);pl->setContentsMargins(0,0,0,0);pl->addWidget(label(item.second,"description"));auto value=label("—");pl->addWidget(value,1,Qt::AlignRight);batteryRows[item.first]=value;details->addWidget(pair,cell/2,cell%2);++cell;}
+    int cell=0;for(const auto &item:QList<QPair<QString,QString>>{{"charge","充电状态"},{"health","容量比"},{"cycles","充电循环"},{"chemistry","电池类型"},{"adapter","电源适配器"},{"voltage","电压"},{"current","电流"},{"manufacturer","制造商"},{"designVoltage","设计电压"},{"power","电池充放电功率"},{"adapterStatus","适配器状态（原厂）"},{"adapterRaw","AcWattage（单位未确认）"},{"manufactureDate","制造日期"},{"vendorHealth","健康分类（原厂代码）"}}){auto pair=new QWidget;auto pl=new QHBoxLayout(pair);pl->setContentsMargins(0,0,0,0);pl->addWidget(label(item.second,"description"));auto value=label("—");pl->addWidget(value,1,Qt::AlignRight);batteryRows[item.first]=value;details->addWidget(pair,cell/2,cell%2);++cell;}
     bc->addWidget(batteryExtra);batteryExtra->hide();connect(all,&QPushButton::clicked,this,[this,all]{bool shown=batteryExtra->isHidden();batteryExtra->setVisible(shown);all->setText(shown?"收起详情  ▾":"电池详情  ▸");});insert(power,batteryCard);
     auto performance=section(power,"性能与图形");
     row(performance,"its","整机性能","极客性能需要连接电源。");row(performance,"power","Windows 电源模式","");row(performance,"gpu","GPU 模式","仅核显模式会先检查独显占用。");
     row(performance,"oc","GPU 超频","开启时会将自适应性能切换为性能档。",false,"switch");
     auto oc=advanced(performance,"超频参数");ocDetails=label("正在读取频率范围…","description");insert(oc,ocDetails);row(oc,"ocCore","核心偏移","",true);row(oc,"ocMemory","显存偏移","",true);
+    auto gpuDetails=advanced(performance,"独显占用程序");gpuOccupancy=label("按需读取占用列表；查询可能唤醒独显。","inlineNote");gpuOccupancy->setTextFormat(Qt::PlainText);insert(gpuDetails,gpuOccupancy);
+    auto gpuLine=new QWidget;auto gpuLayout=new QHBoxLayout(gpuLine);gpuLayout->setContentsMargins(20,0,20,10);gpuLayout->addWidget(label("仅点击时查询，不参与周期刷新。","description"),1);gpuRefresh=new QPushButton("读取占用列表");gpuLayout->addWidget(gpuRefresh);insert(gpuDetails,gpuLine);
+    connect(gpuRefresh,&QPushButton::clicked,this,[this]{
+        if(isBusy())return;
+        run({"--gpu-processes"},[this](QJsonObject result){result["observedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);auto state=snapshot;state["gpuOccupancy"]=result;updateState(state);});
+    });
     auto charging=section(power,"充电策略");row(charging,"charge","充电方式","长期接电时可选择电池养护。",false,"choices");chargeThreshold=label("","inlineNote");insert(charging,chargeThreshold);row(charging,"night","夜间充电","由固件管理夜间充电节奏。",false,"switch");
     auto behavior=section(power,"开机与 USB 供电");row(behavior,"flip","开盖开机","关机后打开屏幕盖即可开机。",false,"switch");row(behavior,"usbAc","接电时 USB 常供电","",false,"switch");row(behavior,"usbDc","电池供电时 USB 常供电","会额外消耗电池电量。",false,"switch");
 
@@ -71,7 +79,19 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     row(presence,"presenceVideo","视频自动暂停","离开暂停，返回继续；需播放器支持。",false,"switch");
 
     auto sound=page("声音","调整默认扬声器与麦克风。");auto audio=section(sound,"音频设备");row(audio,"volume","音量","",true);row(audio,"speakerMute","扬声器静音","",false,"switch");row(audio,"micMute","麦克风静音","",false,"switch");linkRow(audio,"设备与音效","","ms-settings:sound");
-    auto about=page("设备信息","设备支持情况与诊断信息。");auto information=section(about,"关于 ThinkVantage");auto intro=label("独立开发的本地设备设置工具。联想功能依赖本机原厂驱动与服务。","about");insert(information,intro);auto version=label("版本 0.6.0  ·  Windows 11 x64","inlineNote");insert(information,version);
+    auto about=page("设备信息","设备支持情况与诊断信息。");auto information=section(about,"关于 ThinkVantage");auto intro=label("独立开发的本地设备设置工具。联想功能依赖本机原厂驱动与服务。","about");insert(information,intro);auto version=label("版本 "+QCoreApplication::applicationVersion()+"  ·  Windows 11 x64","inlineNote");insert(information,version);
+    auto preferences=section(about,"启动偏好");
+    auto startupRow=new QWidget;auto startupLayout=new QHBoxLayout(startupRow);startupLayout->setContentsMargins(20,12,20,12);
+    startupLayout->addWidget(label("登录 Windows 后启动到托盘","rowTitle"),1);auto startup=new Toggle;startup->setAccessibleName("登录 Windows 后启动到托盘");startupLayout->addWidget(startup);insert(preferences,startupRow);
+    const QString startupKey="HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    QSettings startupSettings(startupKey,QSettings::NativeFormat);startup->setChecked(startupSettings.contains("ThinkVantage"));startup->setToolTip(startupSettings.value("ThinkVantage").toString());
+    connect(startup,&QCheckBox::clicked,this,[this,startup,startupKey](bool enabled){
+        QSettings settings(startupKey,QSettings::NativeFormat);
+        if(enabled)settings.setValue("ThinkVantage",QString("\"%1\" --tray").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath())));
+        else settings.remove("ThinkVantage");settings.sync();
+        if(settings.status()!=QSettings::NoError){QSignalBlocker blocker(startup);startup->setChecked(!enabled);QMessageBox::warning(this,"启动设置未保存","无法写入当前用户的启动设置，请检查权限后重试。");}
+        else {startup->setToolTip(settings.value("ThinkVantage").toString());statusUntil=QDateTime::currentMSecsSinceEpoch()+6000;status->setText(enabled?"已启用当前用户登录后启动到托盘。":"已关闭登录后启动。");}
+    });
     auto diagnostic=section(about,"诊断");auto exportButton=new QPushButton("导出诊断 JSON");exportButton->setObjectName("primary");auto exportLine=new QWidget;auto el=new QHBoxLayout(exportLine);el->setContentsMargins(20,12,20,12);el->addWidget(label("导出设备能力与当前设置，便于排查问题。","description"),1);el->addWidget(exportButton);insert(diagnostic,exportLine);
     auto raw=advanced(diagnostic,"查看原始数据");diagnostics=new QPlainTextEdit;diagnostics->setReadOnly(true);diagnostics->setMinimumHeight(300);diagnostics->installEventFilter(this);insert(raw,diagnostics);
     connect(exportButton,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,"导出诊断信息","ThinkVantage-diagnostics.json","JSON (*.json)");if(path.isEmpty())return;QFile f(path);if(!f.open(QIODevice::WriteOnly)||f.write(QJsonDocument(snapshot).toJson())<0)QMessageBox::warning(this,"导出失败",f.errorString());else status->setText("诊断信息已导出。");});
@@ -141,6 +161,11 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background:transparent; }
         QPlainTextEdit { background:#f7f9fa; border:1px solid #e2e8eb; border-radius:6px; padding:9px; font-family:Consolas; font-size:11px; }
     )");
+    eventRefreshTimer=new QTimer(this);eventRefreshTimer->setSingleShot(true);eventRefreshTimer->setInterval(500);
+    connect(eventRefreshTimer,&QTimer::timeout,this,[this]{if(eventRefreshPending&&!isBusy())reload();});
+    const bool previewOnly=smoke||!capturePath.isEmpty()||QCoreApplication::arguments().contains("--tray-smoke");
+    if(!previewOnly){auto events=new EventHub(quintptr(winId()),this);connect(events,&EventHub::invalidated,this,&Window::invalidateState);}
+    setupAutomation(this,previewOnly);
     list->setCurrentRow(0);auto timer=new QTimer(this);timer->setInterval(15000);connect(timer,&QTimer::timeout,this,[this]{if(isVisible()&&!isMinimized()&&!isBusy()&&QApplication::mouseButtons()==Qt::NoButton)reload();});timer->start();QTimer::singleShot(0,this,&Window::reload);
 }
 

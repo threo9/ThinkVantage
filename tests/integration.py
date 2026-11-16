@@ -1,4 +1,4 @@
-"""Run against an existing build. No hardware writes unless --same-value-writes is supplied."""
+"""Run against an existing build. Hardware writes require --same-value-writes or --input-roundtrip."""
 import argparse
 import json
 import pathlib

@@ -10,6 +10,15 @@ QPoint stop(const ModeSlider &slider,int index){return {qRound(28+(slider.width(
 class UiTests:public QObject {
     Q_OBJECT
 private slots:
+    void failedSnapshotRetainsEvidenceAndBlocksWrites(){
+        QJsonObject source{{"timestamp","2026-11-16T01:00:00Z"},{"features",QJsonObject{{"volume",modeState(3)},{"micMute",QJsonObject{{"available",false},{"error","offline"}}}}},{"_pending",QJsonObject{{"volume",1}}}};
+        QVERIFY(Ui::writable(source,"volume"));
+        auto failed=Ui::expiredSnapshot(source,"timeout","2026-11-16T01:01:00Z");
+        QVERIFY(failed["stale"].toBool());QCOMPARE(failed["timestamp"],source["timestamp"]);QVERIFY(!failed.contains("_pending"));
+        auto volume=failed["features"].toObject()["volume"].toObject();QCOMPARE(volume["value"].toInt(),3);QVERIFY(volume["available"].toBool());QVERIFY(volume["stale"].toBool());
+        QVERIFY(!Ui::writable(failed,"volume"));QCOMPARE(failed["features"].toObject()["micMute"].toObject()["error"].toString(),QString("offline"));
+        QVERIFY(Ui::writable(source,"volume"));QVERIFY(!Ui::writable(source,"micMute"));QVERIFY(!Ui::writable(source,"missing"));
+    }
     void initTestCase(){qApp->setStyle("Fusion");int id=QFontDatabase::addApplicationFont("C:/Windows/Fonts/msyh.ttc");auto families=QFontDatabase::applicationFontFamilies(id);if(!families.isEmpty())qApp->setFont(QFont(families.first(),9));}
     void stopMappingAndReleaseOnly(){
         ModeSlider slider;slider.resize(360,112);slider.setState(modeState(0),true);slider.show();QSignalSpy requests(&slider,&ModeSlider::modeRequested);
