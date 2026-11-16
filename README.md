@@ -1,4 +1,4 @@
-# ThinkVantage 0.5.3
+# ThinkVantage 0.5.4
 
 面向 Windows 11 x64 的轻量设备设置工具，使用 C++20、Qt 6.12.0 Widgets 和 E:\Qt6 中的 MSVC 143 构建，针对 ThinkBook 16 G6+ IMH / 21LE 适配。
 
@@ -8,9 +8,9 @@
 
 ## 托盘与快捷面板
 
-主窗口和托盘中的整机性能使用软件实时绘制的分档滑块：节能、自适应、性能、Ultra（极客）。控件采用紧凑的当前档位、说明、轨道及四档文字标记。轨道、滑块、文字和粒子均由Qt QPainter绘制，不使用截图贴图。滑块带吸附和缓动，支持方向键及Home/End；拖动时仅预览，松开后才提交。档位由设备能力决定，Ultra仍要求接电。配色随性能档位由冷到暖变化：节能蓝、自适应青、性能橙、Ultra火红。标题、填充轨道、当前档位文字及键盘焦点同步配色，切换时以230ms缓动过渡。Ultra显示橙红渐变与暖白、金色粒子视效；动效只在可见时运行，隐藏或最小化后停止，并遵循Windows的界面动画设置。
+主窗口和托盘中的整机性能使用软件实时绘制的分档滑块：节能、自适应、性能、Ultra（极客）。控件采用紧凑的当前档位、说明、轨道及四档文字标记。轨道、滑块、文字和粒子均由Qt QPainter绘制，不使用截图贴图。滑块带吸附和缓动，支持方向键及Home/End；拖动时仅预览，松开后才提交。档位由设备能力决定，Ultra仍要求接电。配色随性能档位由冷到暖变化：节能蓝、自适应青、性能琥珀黄、Ultra深火红。标题、填充轨道、当前档位文字及键盘焦点同步配色，切换时以230ms缓动过渡。Ultra显示橙色到深火红的渐变与暖白、金色粒子视效；动效只在可见时运行，隐藏或最小化后停止，并遵循Windows的界面动画设置。
 
-![性能滑块四档配色](docs/screenshots-v053/palette.png)
+![性能滑块四档配色](docs/screenshots-v054/palette.png)
 
 后台读取现在采用静默、增量更新：控件保持可用，相同选项不再清空重建，下拉菜单与拖动过程保持；设备实际数值变化才更新。亮度、音量、开关及电池条使用短缓动。读取期间提交的操作会排队，只有对应控件显示等待状态，写入后先发布回读结果，再后台刷新关联数据。原始诊断信息在展开后按需更新，保留滚动位置与选区。
 
@@ -74,7 +74,7 @@
 ```powershell
 cd E:\Code\ThinkVantage
 .\scripts\build.ps1 -Package
-python .\tests\integration.py .\dist\ThinkVantage-0.5.3-win64\ThinkVantage.exe --report .\research\integration-readonly.json
+python .\tests\integration.py .\dist\ThinkVantage-0.5.4-win64\ThinkVantage.exe --report .\research\integration-readonly.json
 ```
 
 工具链：Qt 6.12.0 msvc2022_64、MSVC 143 19.44、Windows SDK 10.0.26100.0。extract-vendor.ps1 从本机固定版本组件提取运行库，以 Framework64 csc 编译隔离桥接程序。构建只修改当前进程环境变量。

@@ -13,8 +13,8 @@ Palette paletteAt(qreal warmth){
     static const Palette stops[]={
         {QColor("#4789ee"),QColor("#2867d8"),QColor("#245bb8")},
         {QColor("#39bac5"),QColor("#168e9b"),QColor("#0d737e")},
-        {QColor("#ffbc54"),QColor("#ef8328"),QColor("#a95312")},
-        {QColor("#ff9d2c"),QColor("#f13224"),QColor("#c52b20")}
+        {QColor("#f5ce70"),QColor("#dda644"),QColor("#946520")},
+        {QColor("#f28d32"),QColor("#dc2d2c"),QColor("#b52a26")}
     };
     warmth=qBound(0.,warmth,3.);int lower=qMin(int(warmth),2);qreal t=warmth-lower;
     return {mix(stops[lower].start,stops[lower+1].start,t),mix(stops[lower].end,stops[lower+1].end,t),mix(stops[lower].text,stops[lower+1].text,t)};

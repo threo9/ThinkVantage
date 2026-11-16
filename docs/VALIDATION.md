@@ -1,6 +1,12 @@
-# ThinkVantage 0.5.3 验证记录
+# ThinkVantage 0.5.4 验证记录
 
 日期：2026-11-16，Asia/Hong_Kong。
+
+## 0.5.4 性能与极客配色微调
+
+根据用户反馈，性能档从橙色微调为更偏黄、饱和度略低的琥珀色，填充渐变由#ffbc54→#ef8328改为#f5ce70→#dda644；Ultra略微加深红色，填充渐变由#ff9d2c→#f13224改为#f28d32→#dc2d2c。对应文字色同步微调为#946520及#b52a26。保留其余两档配色、230ms颜色过渡、粒子、能力判断和设备设置行为。
+
+Release构建与两项CTest通过，UI测试记录8项零失败；四档控件渲染已检查。原生窗口及托盘验证和只读集成记录见research/palette-v054-build.log、research/palette-v054-ui-tests.xml、research/smooth-v054-completion.json、research/smooth-v054-integration.json、docs/tray-verification-v054.json、docs/ui-verification-v054.json及docs/screenshots-v054；scripts/verify-smooth.ps1默认验证0.5.4。
 
 ## 0.5.3 性能滑块冷暖配色
 
