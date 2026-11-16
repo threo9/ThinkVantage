@@ -42,7 +42,9 @@ private slots:
         auto destination=qEnvironmentVariable("THINKVANTAGE_UI_ARTIFACT_DIR");if(destination.isEmpty())return;QDir().mkpath(destination);
         QFrame frame;frame.setFocusPolicy(Qt::StrongFocus);frame.setStyleSheet("QFrame {background:white;border:1px solid #e3e3e7;border-radius:16px;}");auto layout=new QVBoxLayout(&frame);layout->setContentsMargins(10,8,10,8);auto slider=new ModeSlider;layout->addWidget(slider);frame.resize(430,116);frame.show();frame.setFocus();
         auto capture=[&](const QString &name){QPixmap image(frame.size()*2);image.setDevicePixelRatio(2);image.fill(Qt::transparent);frame.render(&image);return image.save(QDir(destination).filePath(name));};
-        for(int mode:{1,0,3,4}){slider->setState(modeState(mode),true);QTest::qWait(280);QVERIFY(capture(QString("mode-%1.png").arg(mode)));}
+        QList<QPixmap> previews;
+        for(int mode:{1,0,3,4}){slider->setState(modeState(mode),true);QTest::qWait(280);const auto name=QString("mode-%1.png").arg(mode);QVERIFY(capture(name));previews.append(QPixmap(QDir(destination).filePath(name)));}
+        QPixmap palette(previews[0].width()*2,previews[0].height()*2);palette.fill(Qt::white);{QPainter p(&palette);for(int i=0;i<previews.size();++i)p.drawPixmap((i%2)*previews[i].width(),(i/2)*previews[i].height(),previews[i]);}QVERIFY(palette.save(QDir(destination).filePath("palette.png")));
         for(int i=0;i<28;++i){QTest::qWait(50);QVERIFY(capture(QString("ultra-%1.png").arg(i,2,10,QChar('0'))));}
     }
 };

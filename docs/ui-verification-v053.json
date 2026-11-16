@@ -1,0 +1,659 @@
+{
+    "controls": 32,
+    "ok": true,
+    "pages": 5,
+    "snapshot": {
+        "ac": true,
+        "administrator": true,
+        "battery": {
+            "chargeStatus": 0,
+            "chemistry": "LiPM",
+            "currentMa": 0,
+            "currentWh": 80.55,
+            "cycles": 77,
+            "designVoltageV": 15.6,
+            "designWh": 85,
+            "fullWh": 84.67,
+            "health": 100,
+            "healthExact": 99.61176470588235,
+            "manufacturer": "SMP",
+            "provider": "Lenovo IdeaBatteryAgent",
+            "storage80": true,
+            "temperatureC": 31,
+            "voltageV": 17.266
+        },
+        "batteryPercent": 95,
+        "features": {
+            "backlight": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "低亮度",
+                        "value": 1
+                    },
+                    {
+                        "label": "高亮度",
+                        "value": 2
+                    },
+                    {
+                        "label": "自动",
+                        "value": 3
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "value": 0
+            },
+            "backlightRemember": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo KBLR",
+                "value": 1
+            },
+            "brightness": {
+                "available": true,
+                "options": [
+                ],
+                "provider": "Windows WMI",
+                "value": 65
+            },
+            "cameraAssist": {
+                "available": true,
+                "capability": 2047,
+                "enabled": false,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 0
+            },
+            "capsOsd": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo 热键服务",
+                "value": 1
+            },
+            "charge": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "标准充电",
+                        "value": 0
+                    },
+                    {
+                        "label": "电池养护",
+                        "value": 1
+                    },
+                    {
+                        "label": "快速充电",
+                        "value": 2
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "raw": "860200",
+                "value": 0
+            },
+            "flip": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo FBSWIF",
+                "value": 0
+            },
+            "fnCtrlSwap": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo BIOS Assistant",
+                "value": 0
+            },
+            "fnlock": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "value": 1
+            },
+            "gpu": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "混合模式",
+                        "value": 0
+                    },
+                    {
+                        "label": "仅核显",
+                        "value": 1
+                    },
+                    {
+                        "label": "自动模式",
+                        "value": 2
+                    }
+                ],
+                "provider": "Lenovo GameZone",
+                "value": 0
+            },
+            "its": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "自适应（自动）",
+                        "value": 0
+                    },
+                    {
+                        "label": "节能",
+                        "value": 1
+                    },
+                    {
+                        "label": "性能",
+                        "value": 3
+                    },
+                    {
+                        "label": "极客性能",
+                        "value": 4
+                    }
+                ],
+                "provider": "Lenovo ITS",
+                "requiresAc": 4,
+                "value": 4
+            },
+            "lockAuto": {
+                "available": true,
+                "capability": 2047,
+                "enabled": false,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "手动设置最大检测距离",
+                        "value": 0
+                    },
+                    {
+                        "label": "自动调整",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 1
+            },
+            "lockDistance": {
+                "available": true,
+                "capability": 2047,
+                "enabled": false,
+                "faceRegistered": true,
+                "meters": [
+                    0.9,
+                    1.2,
+                    1.5
+                ],
+                "options": [
+                    {
+                        "label": "近",
+                        "value": 0
+                    },
+                    {
+                        "label": "中",
+                        "value": 1
+                    },
+                    {
+                        "label": "远",
+                        "value": 2
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 2
+            },
+            "lockTimer": {
+                "available": true,
+                "capability": 2047,
+                "enabled": false,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "快速",
+                        "value": 0
+                    },
+                    {
+                        "label": "中速",
+                        "value": 1
+                    },
+                    {
+                        "label": "慢速",
+                        "value": 2
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 0
+            },
+            "loginAuto": {
+                "available": true,
+                "capability": 2047,
+                "enabled": true,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "手动设置最大检测距离",
+                        "value": 0
+                    },
+                    {
+                        "label": "自动调整",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 0
+            },
+            "loginDistance": {
+                "available": true,
+                "capability": 2047,
+                "enabled": true,
+                "faceRegistered": true,
+                "meters": [
+                    0.55,
+                    1,
+                    1.5
+                ],
+                "options": [
+                    {
+                        "label": "近",
+                        "value": 0
+                    },
+                    {
+                        "label": "中",
+                        "value": 1
+                    },
+                    {
+                        "label": "远",
+                        "value": 2
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 2
+            },
+            "micMute": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Windows Core Audio",
+                "value": 0
+            },
+            "night": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "value": 1
+            },
+            "numOsd": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo 热键服务",
+                "value": 1
+            },
+            "oc": {
+                "available": true,
+                "details": {
+                    "core": 0,
+                    "coreBase": 1545,
+                    "coreDefault": 100,
+                    "coreMax": 200,
+                    "coreMin": 0,
+                    "coreStep": 1,
+                    "memory": 0,
+                    "memoryBase": 8001,
+                    "memoryDefault": 200,
+                    "memoryMax": 400,
+                    "memoryMin": 0,
+                    "memoryStep": 1,
+                    "pluginAbility": 0,
+                    "rawState": 1
+                },
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo GPU OC",
+                "value": 0
+            },
+            "ocCore": {
+                "available": true,
+                "details": {
+                    "core": 0,
+                    "coreBase": 1545,
+                    "coreDefault": 100,
+                    "coreMax": 200,
+                    "coreMin": 0,
+                    "coreStep": 1,
+                    "memory": 0,
+                    "memoryBase": 8001,
+                    "memoryDefault": 200,
+                    "memoryMax": 400,
+                    "memoryMin": 0,
+                    "memoryStep": 1,
+                    "pluginAbility": 0,
+                    "rawState": 1
+                },
+                "enabled": false,
+                "max": 200,
+                "min": 0,
+                "options": [
+                ],
+                "provider": "Lenovo GPU OC",
+                "step": 1,
+                "unit": "MHz",
+                "value": 0
+            },
+            "ocMemory": {
+                "available": true,
+                "details": {
+                    "core": 0,
+                    "coreBase": 1545,
+                    "coreDefault": 100,
+                    "coreMax": 200,
+                    "coreMin": 0,
+                    "coreStep": 1,
+                    "memory": 0,
+                    "memoryBase": 8001,
+                    "memoryDefault": 200,
+                    "memoryMax": 400,
+                    "memoryMin": 0,
+                    "memoryStep": 1,
+                    "pluginAbility": 0,
+                    "rawState": 1
+                },
+                "enabled": false,
+                "max": 400,
+                "min": 0,
+                "options": [
+                ],
+                "provider": "Lenovo GPU OC",
+                "step": 1,
+                "unit": "MHz",
+                "value": 0
+            },
+            "power": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "最佳能效",
+                        "value": 0
+                    },
+                    {
+                        "label": "平衡",
+                        "value": 1
+                    },
+                    {
+                        "label": "最佳性能",
+                        "value": 2
+                    }
+                ],
+                "provider": "Windows",
+                "value": 2
+            },
+            "presenceLock": {
+                "available": true,
+                "capability": 2047,
+                "enabled": true,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 0
+            },
+            "presenceLogin": {
+                "available": true,
+                "capability": 2047,
+                "enabled": true,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 1
+            },
+            "presenceVideo": {
+                "available": true,
+                "capability": 2047,
+                "enabled": true,
+                "faceRegistered": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo Smart Sense",
+                "sensorType": 2,
+                "value": 0
+            },
+            "refresh": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "24 Hz",
+                        "value": 24
+                    },
+                    {
+                        "label": "30 Hz",
+                        "value": 30
+                    },
+                    {
+                        "label": "48 Hz",
+                        "value": 48
+                    },
+                    {
+                        "label": "60 Hz",
+                        "value": 60
+                    },
+                    {
+                        "label": "75 Hz",
+                        "value": 75
+                    },
+                    {
+                        "label": "100 Hz",
+                        "value": 100
+                    },
+                    {
+                        "label": "120 Hz",
+                        "value": 120
+                    },
+                    {
+                        "label": "165 Hz",
+                        "value": 165
+                    }
+                ],
+                "provider": "Windows Display",
+                "value": 165
+            },
+            "speakerMute": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Windows Core Audio",
+                "value": 0
+            },
+            "touchpad": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Windows Precision Touchpad",
+                "value": 1
+            },
+            "usbAc": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "value": 1
+            },
+            "usbDc": {
+                "available": true,
+                "options": [
+                    {
+                        "label": "关闭",
+                        "value": 0
+                    },
+                    {
+                        "label": "开启",
+                        "value": 1
+                    }
+                ],
+                "provider": "Lenovo EnergyDrv",
+                "value": 0
+            },
+            "volume": {
+                "available": true,
+                "currentDb": -17,
+                "hardwareVolume": true,
+                "maxDb": 0,
+                "minDb": -63.5,
+                "options": [
+                ],
+                "provider": "Windows Core Audio",
+                "stepDb": 0.5,
+                "stepIndex": 16,
+                "steps": 51,
+                "value": 32
+            }
+        },
+        "model": "21LE",
+        "product": "ThinkBook 16 G6+ IMH",
+        "schema": 1,
+        "timestamp": "2026-11-16T05:59:30Z",
+        "windows11": true
+    }
+}

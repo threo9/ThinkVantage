@@ -32,7 +32,7 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     auto identity=new QHBoxLayout;auto logo=label("T","logo");logo->setFixedSize(34,34);logo->setAlignment(Qt::AlignCenter);identity->addWidget(logo);auto brand=new QVBoxLayout;brand->setSpacing(1);brand->addWidget(label("ThinkVantage","brand"));brand->addWidget(label("设备控制台","subbrand"));identity->addLayout(brand);identity->addStretch();nav->addLayout(identity);nav->addSpacing(32);
     auto list=new QListWidget;list->setObjectName("navigation");list->setSpacing(5);list->setIconSize(QSize(20,20));
     QStringList names{"电源与性能","键盘与触控板","显示与感知","声音","设备信息"};for(int i=0;i<names.size();++i)list->addItem(new QListWidgetItem(navigationIcon(i),names[i]));nav->addWidget(list,1);
-    auto sideNote=label("ThinkVantage  0.5.2\nWindows 11","sideNote");nav->addWidget(sideNote);outer->addWidget(sidebar);
+    auto sideNote=label("ThinkVantage  0.5.3\nWindows 11","sideNote");nav->addWidget(sideNote);outer->addWidget(sidebar);
     auto content=new QWidget;auto column=new QVBoxLayout(content);column->setContentsMargins(30,20,26,14);column->setSpacing(14);
     auto header=new QHBoxLayout;header->setSpacing(8);device=label("正在连接设备…","device");header->addWidget(device,1);
     admin=new QPushButton("管理员模式");admin->setObjectName("admin");admin->setToolTip("以管理员身份重新打开，使用需要提升权限的设备设置");connect(admin,&QPushButton::clicked,this,[this]{if(Backend::relaunchElevated())requestQuit();else status->setText("未完成管理员启动。");});header->addWidget(admin);
@@ -71,7 +71,7 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     row(presence,"presenceVideo","视频自动暂停","离开暂停，返回继续；需播放器支持。",false,"switch");
 
     auto sound=page("声音","调整默认扬声器与麦克风。");auto audio=section(sound,"音频设备");row(audio,"volume","音量","",true);row(audio,"speakerMute","扬声器静音","",false,"switch");row(audio,"micMute","麦克风静音","",false,"switch");linkRow(audio,"设备与音效","","ms-settings:sound");
-    auto about=page("设备信息","设备支持情况与诊断信息。");auto information=section(about,"关于 ThinkVantage");auto intro=label("独立开发的本地设备设置工具。联想功能依赖本机原厂驱动与服务。","about");insert(information,intro);auto version=label("版本 0.5.2  ·  Windows 11 x64","inlineNote");insert(information,version);
+    auto about=page("设备信息","设备支持情况与诊断信息。");auto information=section(about,"关于 ThinkVantage");auto intro=label("独立开发的本地设备设置工具。联想功能依赖本机原厂驱动与服务。","about");insert(information,intro);auto version=label("版本 0.5.3  ·  Windows 11 x64","inlineNote");insert(information,version);
     auto diagnostic=section(about,"诊断");auto exportButton=new QPushButton("导出诊断 JSON");exportButton->setObjectName("primary");auto exportLine=new QWidget;auto el=new QHBoxLayout(exportLine);el->setContentsMargins(20,12,20,12);el->addWidget(label("导出设备能力与当前设置，便于排查问题。","description"),1);el->addWidget(exportButton);insert(diagnostic,exportLine);
     auto raw=advanced(diagnostic,"查看原始数据");diagnostics=new QPlainTextEdit;diagnostics->setReadOnly(true);diagnostics->setMinimumHeight(300);diagnostics->installEventFilter(this);insert(raw,diagnostics);
     connect(exportButton,&QPushButton::clicked,this,[this]{auto path=QFileDialog::getSaveFileName(this,"导出诊断信息","ThinkVantage-diagnostics.json","JSON (*.json)");if(path.isEmpty())return;QFile f(path);if(!f.open(QIODevice::WriteOnly)||f.write(QJsonDocument(snapshot).toJson())<0)QMessageBox::warning(this,"导出失败",f.errorString());else status->setText("诊断信息已导出。");});

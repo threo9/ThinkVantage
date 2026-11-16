@@ -1,6 +1,16 @@
-# ThinkVantage 0.5.2 验证记录
+# ThinkVantage 0.5.3 验证记录
 
 日期：2026-11-16，Asia/Hong_Kong。
+
+## 0.5.3 性能滑块冷暖配色
+
+根据用户要求，性能滑块由节能的蓝色递进到极客模式的火红色：节能蓝、自适应青、性能橙、Ultra火红。四档填充末端色分别为#2867d8、#168e9b、#ef8328、#f13224，Ultra从橙色渐变到火红色；标题及选中档位采用同色系较深颜色，手柄描边、轨道底色与键盘焦点同步配色。颜色以230ms缓动切换，隐藏时停止，禁用状态使用灰色；Ultra粒子采用暖白和金色。主窗口及托盘共用绘制代码。
+
+保持原有1/0/3/4固件映射、释放后提交、接电校验、静默增量更新与隐藏后暂停粒子的行为，没有更改硬件策略或为了预览切换实际档位。四档对照图来自同一Qt控件的独立渲染。
+
+Release构建与两项CTest通过，UI测试记录8项零失败；四档配色逐一检查。原生主窗口5页32控件、托盘9控件、静默读取、透明窗口样式及带周边桌面的截图检查通过；独立只读集成通过。
+
+验证记录：research/palette-v053-build.log、research/palette-v053-ui-tests.xml、research/smooth-v053-completion.json、research/smooth-v053-integration.json、docs/tray-verification-v053.json、docs/ui-verification-v053.json与docs/screenshots-v053。scripts/verify-smooth.ps1默认验证0.5.3。
 
 ## 0.5.2 托盘外侧矩形投影
 

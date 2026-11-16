@@ -32,10 +32,10 @@ protected:
     bool eventFilter(QObject*,QEvent*)override;
 private:
     QList<int> modes;
-    QVariantAnimation slide,ultra;
+    QVariantAnimation slide,ultra,warmth;
     QTimer particles;
     QElapsedTimer clock;
-    qreal position=0,ultraAmount=0;
+    qreal position=0,ultraAmount=0,warmthAmount=0;
     int confirmed=-1;
     bool onAc=true,pending=false,known=false,keyboardEditing=false;
     quint64 transitions=0;

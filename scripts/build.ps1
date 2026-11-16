@@ -27,9 +27,9 @@ if($LASTEXITCODE){throw 'Build failed'}
 & (Join-Path $QtRoot 'Tools\CMake_64\bin\ctest.exe') --test-dir "$projectRoot\build" --output-on-failure
 if($LASTEXITCODE){throw 'Tests failed'}
 if($Package){
-    $destination=Join-Path $projectRoot 'dist\ThinkVantage-0.5.2-win64'
+    $destination=Join-Path $projectRoot 'dist\ThinkVantage-0.5.3-win64'
     $resolvedDestination=[IO.Path]::GetFullPath($destination)
-    $expectedDestination=[IO.Path]::GetFullPath((Join-Path $projectRoot 'dist\ThinkVantage-0.5.2-win64'))
+    $expectedDestination=[IO.Path]::GetFullPath((Join-Path $projectRoot 'dist\ThinkVantage-0.5.3-win64'))
     if($resolvedDestination -ne $expectedDestination -or -not $resolvedDestination.StartsWith([IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe package destination'}
     if(Test-Path -LiteralPath $resolvedDestination){Remove-Item -LiteralPath $resolvedDestination -Recurse -Force}
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
@@ -45,5 +45,5 @@ if($Package){
     }
     if(Test-Path -LiteralPath "$projectRoot\docs\VALIDATION.md"){Copy-Item -LiteralPath "$projectRoot\docs\VALIDATION.md" -Destination $destination -Force}
     Copy-Item -LiteralPath "$projectRoot\docs\IMPLEMENTATION_EVIDENCE.md" -Destination $destination -Force
-    Compress-Archive -Path $destination -DestinationPath "$projectRoot\dist\ThinkVantage-0.5.2-win64.zip" -Force
+    Compress-Archive -Path $destination -DestinationPath "$projectRoot\dist\ThinkVantage-0.5.3-win64.zip" -Force
 }
