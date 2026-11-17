@@ -24,6 +24,9 @@ $version=(Select-String -LiteralPath (Join-Path $projectRoot 'CMakeLists.txt') -
 $qtManifest=Join-Path $QtPrefix 'thinkvantage-build.json'
 $qtMetadata=if(Test-Path -LiteralPath $qtManifest){Get-Content -Raw -LiteralPath $qtManifest | ConvertFrom-Json}else{@{prefix=$QtPrefix;external=$true}}
 $report=[ordered]@{version=$version;linkage='static';runtime='MT';imports=$imports;executableBytes=(Get-Item -LiteralPath $exe).Length;sha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash;qt=$qtMetadata}
+$report.sourceCommit=(& git -C $projectRoot rev-parse HEAD).Trim()
+if($LASTEXITCODE){throw 'Cannot record source commit'}
+$report.sourceDirty=[bool](& git -C $projectRoot status --porcelain)
 $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $buildDir 'static-build.json')
 if($Package){
     $distRoot=[IO.Path]::GetFullPath((Join-Path $projectRoot 'dist'))
@@ -36,6 +39,7 @@ if($Package){
     }
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
     Copy-Item -LiteralPath $exe,(Join-Path $buildDir 'static-build.json'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'docs\VALIDATION.md'),(Join-Path $projectRoot 'docs\IMPLEMENTATION_EVIDENCE.md'),(Join-Path $projectRoot 'docs\FEATURE_COMPLETION_0.7.0.md') -Destination $destination
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\REVIEW_FIXES_2026-11-17.md') -Destination $destination
     Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses'),(Join-Path $projectRoot 'vendor') -Destination $destination -Recurse
     # GPUInfo is proprietary and still imports the dynamic VC runtime. Keep
     # these dependencies beside that DLL; the main executable uses /MT.

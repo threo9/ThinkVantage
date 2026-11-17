@@ -55,12 +55,12 @@ QList<Action> Engine::observe(const QJsonObject &s){
         if(recovery){if(!c)return {};recovery=false;return restore(s);} // Crash/restart: restore, never silently resume.
         if(c&&*c!=0&&t["phase"].toString()!="switching"){config.remove("topUp");}
         else if(t["phase"].toString()=="attention"){} // Explicit retry only after failure.
-        else if(!s["ac"].toBool()||(s["batteryPercent"].isDouble()&&s["batteryPercent"].toDouble()>=100))actions=restore(s);
+        else if(t["cancelRequested"].toBool()||!s["ac"].toBool()||(s["batteryPercent"].isDouble()&&s["batteryPercent"].toDouble()>=100))actions=restore(s);
     }else recovery=false;
-    bool ac=s["ac"].toBool();if(lastAc&&*lastAc==ac)return actions;lastAc=ac;overrides.clear();
+    bool ac=s["ac"].toBool();supplyChanged(ac);if(lastAc&&*lastAc==ac&&!needsSupplyEvaluation())return actions;lastAc=ac;appliedSupplyEpoch=supplyEpoch;
     if(!config["enabled"].toBool())return actions;
     auto a=config[ac?"ac":"dc"].toObject()["actions"].toObject();lastEvaluation={};
-    for(const auto &id:profileIds())if(a.contains(id)){
+    for(const auto &id:profileIds())if(a.contains(id)&&!overrides.contains(id)){
         auto v=value(s,id);auto f=s["features"].toObject()[id].toObject();int target=a[id].toInt();
         bool allowed=f["enabled"].toBool(true);if(f["requiresAc"].toInt(-999)==target&&!ac)allowed=false;
         if(!f["options"].toArray().isEmpty()){bool offered=false;for(auto opt:f["options"].toArray())if(opt.toObject()["value"].toInt()==target)offered=true;allowed=allowed&&offered;}

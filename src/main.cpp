@@ -22,7 +22,7 @@ int main(int argc,char **argv){
     if(worker){
         QCoreApplication app(argc,argv);app.setApplicationName("ThinkVantage");app.setOrganizationName("ThinkVantage");auto args=app.arguments();QJsonObject result;
         if(args[1]=="--help"&&args.size()==2)result={{"ok",true},{"commands",QJsonArray{"--help","--version","--probe","--list","--get ID","--apply ID VALUE","--apply-if ID VALUE EXPECTED [ac|dc]","--gpu-processes","--tray","--quick","--quit"}},{"refreshConfirmation","--apply refresh 输出 preview，15秒内向 stdin 写入 keep\\n 保留；断开或超时恢复"}};
-        else if(args[1]=="--version"&&args.size()==2)result={{"ok",true},{"version","0.7.0"}};
+        else if(args[1]=="--version"&&args.size()==2)result={{"ok",true},{"version","0.7.1"}};
         else if(args[1]=="--gpu-processes-worker"&&args.size()==2){
             result=Vendor::gpuProcessesRaw();result["ok"]=result["available"].toBool();result["schema"]=1;
             // Proprietary GPUInfo prints diagnostics to stdout. Its parent
@@ -34,6 +34,15 @@ int main(int argc,char **argv){
             result=Backend::read();if(args[1]=="--list"&&result["ok"].toBool())result={{"ok",true},{"features",result["features"]},{"partial",result["partial"]}};
         }
         else if(args[1]=="--get"&&args.size()==3){auto snapshot=Backend::read();auto features=snapshot["features"].toObject();if(!snapshot["ok"].toBool())result=snapshot;else if(!features.contains(args[2]))result={{"ok",false},{"error","未知设置 ID"}};else {auto state=features[args[2]].toObject();result={{"ok",state["available"].toBool()},{"id",args[2]},{"state",state}};if(!state["available"].toBool())result["error"]=state["error"];}}
+        else if(args[1]=="--apply-target"&&args.size()==7){
+            bool valid=false,generationValid=false;int value=args[3].toInt(&valid);auto generation=args[6].toULongLong(&generationValid);
+            if(valid&&generationValid&&!args[5].isEmpty()&&(!TargetContext::required(args[2])||!args[4].isEmpty())){
+                Journal::append({{"kind","targetRequest"},{"id",args[2]},{"requested",value},{"target",args[4]},{"requestId",args[5]},{"generation",qint64(generation)}});
+                result=Backend::apply(args[2],value,std::nullopt,std::nullopt,args[4]);
+                if(args[2]=="refresh"&&result["ok"].toBool()){auto preview=result;preview["preview"]=true;output(preview);result=Backend::confirmRefresh(result["operationToken"].toString());}
+            }else result={{"ok",false},{"error","无效的目标设置请求"}};
+            result["requestId"]=args[5];result["generation"]=qint64(generation);Journal::append({{"kind","targetResult"},{"id",args[2]},{"target",args[4]},{"result",result}});
+        }
         else if(args[1]=="--apply"||args[1]=="--apply-if"){
             const bool conditional=args[1]=="--apply-if";const bool countValid=conditional?(args.size()==5||args.size()==6):args.size()==4;
             bool valid=false,expectedValid=!conditional;int value=countValid?args[3].toInt(&valid):0;int expected=conditional&&countValid?args[4].toInt(&expectedValid):0;
@@ -48,16 +57,26 @@ int main(int argc,char **argv){
         }else result={{"ok",false},{"error","未知命令或参数数量无效；使用 --help 查看命令"}};
         result["schema"]=1;if(!result.contains("ok"))result["ok"]=!result.contains("error");output(result);return result["ok"].toBool()?0:1;
     }
-    QApplication app(argc,argv);app.setApplicationName("ThinkVantage");app.setApplicationVersion("0.7.0");app.setOrganizationName("ThinkVantage");app.setStyle(QStyleFactory::create("Fusion"));
+    QApplication app(argc,argv);app.setApplicationName("ThinkVantage");app.setApplicationVersion("0.7.1");app.setOrganizationName("ThinkVantage");app.setStyle(QStyleFactory::create("Fusion"));
     if(!Backend::isWindows11()){QMessageBox::critical(nullptr,"ThinkVantage","此程序仅支持 Windows 11 x64。");return 1;}
     auto args=app.arguments();int ix=args.indexOf("--screenshot");QString capture=ix>=0&&ix+1<args.size()?args[ix+1]:QString();
     bool uiSmoke=args.contains("--ui-smoke"),traySmoke=args.contains("--tray-smoke"),testing=uiSmoke||traySmoke||!capture.isEmpty();
     AppInstance instance;
+    const bool takingOver=args.contains("--elevated-handoff");
     if(!testing){
         if(args.contains("--quit"))return instance.notify("quit")?0:1;
-        if(!instance.acquire(args.contains("--elevated-handoff"))){bool ok=instance.notify(args.contains("--quick")?"panel":args.contains("--tray")?"noop":"show");if(!ok)QMessageBox::warning(nullptr,"ThinkVantage","另一个实例正在启动或退出，请稍后重试。");return ok?0:1;}
+        if(takingOver){
+            int at=args.indexOf("--elevated-handoff");
+            if(!Backend::isAdministrator()||at+1>=args.size()||!instance.joinHandoff(args[at+1]))return 1;
+        }else if(!instance.acquire()){bool ok=instance.notify(args.contains("--quick")?"panel":args.contains("--tray")?"noop":"show");if(!ok)QMessageBox::warning(nullptr,"ThinkVantage","另一个实例正在启动或退出，请稍后重试。");return ok?0:1;}
     }
     Window window(traySmoke?QString():capture,uiSmoke);TrayController tray(&window,!uiSmoke&&(capture.isEmpty()||traySmoke));
+    if(takingOver&&!testing&&!instance.confirmHandoff())return 1;
+    QObject::connect(&window,&Window::elevationRequested,&window,[&]{
+        window.setProperty("handoffActive",true);window.setEnabled(false);
+        if(!instance.beginHandoff([&]{return window.handoffPreparation?window.handoffPreparation():!window.isBusy();},[&]{if(window.handoffCancelled)window.handoffCancelled();})){window.setProperty("handoffActive",false);window.setEnabled(true);}
+    });
+    QObject::connect(&instance,&AppInstance::handoffFinished,&window,[&](bool ok,const QString &error){if(ok)QCoreApplication::quit();else {window.setProperty("handoffActive",false);window.setEnabled(true);QMessageBox::warning(&window,"管理员交接未完成",error);}});
     QObject::connect(&instance,&AppInstance::commandReceived,&window,[&](const QByteArray &command){if(command=="show")window.showPage();else if(command=="panel")tray.showPanel();else if(command=="quit")window.requestQuit();});
     if(traySmoke){
         auto once=std::make_shared<bool>(false);QObject::connect(&window,&Window::snapshotChanged,&window,[&,once](const QJsonObject &){if(*once)return;*once=true;QTimer::singleShot(150,&window,[&]{auto report=tray.verify(capture);QFile f(QCoreApplication::applicationDirPath()+"/tray-smoke.json");bool written=f.open(QIODevice::WriteOnly)&&f.write(QJsonDocument(report).toJson())>0;QCoreApplication::exit(report["ok"].toBool()&&written?0:2);});});

@@ -6,6 +6,8 @@
 #include <QProcess>
 #include <QJsonDocument>
 #include <QFile>
+#include <QUuid>
+#include <windows.h>
 void Window::showPage(int index){findChild<QListWidget*>()->setCurrentRow(qBound(0,index,pages->count()-1));showNormal();raise();activateWindow();}
 void Window::closeEvent(QCloseEvent *event){
     if(trayActive){hide();event->ignore();emit hiddenToTray();return;}
@@ -26,20 +28,24 @@ void Window::enableControls(){
 }
 void Window::markStale(const QString &error){
     const auto discarded=pendingSettings.keys();
-    pendingSettings.clear();pendingOrder.clear();
+    pendingSettings.clear();pendingContexts.clear();pendingOrder.clear();
     for(const auto &id:discarded)emit manualSettingFinished(id,false);
     updateState(Ui::expiredSnapshot(snapshot,error,QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)));
     auto message="状态已过期："+error+"。请刷新后重试。";statusUntil=0;Ui::text(status,message);emit operationFinished(false,message);
 }
 void Window::invalidateState(const QString &reason){
+    SYSTEM_POWER_STATUS supply{};if(GetSystemPowerStatus(&supply)&&supply.ACLineStatus<=1)emit supplyObserved(supply.ACLineStatus==1);
+    generation.invalidate();
+    snapshot=Ui::expiredSnapshot(snapshot,reason,QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
     snapshot["lastInvalidationReason"]=reason;snapshot["invalidatedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);diagnosticsDirty=true;
+    updateState(snapshot);
     eventRefreshPending=true;if(eventRefreshTimer)eventRefreshTimer->start();
 }
 void Window::run(const QStringList &args,std::function<void(QJsonObject)> done){
     if(process)return;
     process=new QProcess(this);auto proc=process;proc->setProgram(QCoreApplication::applicationFilePath());proc->setArguments(args);
-    const bool refreshWorker=args.size()>=2&&args[0]=="--apply"&&args[1]=="refresh";
-    const bool applyWorker=!args.isEmpty()&&args[0]=="--apply";
+    const bool applyWorker=!args.isEmpty()&&(args[0]=="--apply"||args[0]=="--apply-target");
+    const bool refreshWorker=args.size()>=2&&applyWorker&&args[1]=="refresh";
     auto timeout=new QTimer(proc);timeout->setSingleShot(true);timeout->setInterval(22000);
     auto output=std::make_shared<QByteArray>();auto completed=std::make_shared<bool>(false),timedOut=std::make_shared<bool>(false);
     connect(proc,&QProcess::readyReadStandardOutput,this,[this,proc,output,timeout,timedOut]{
@@ -80,7 +86,9 @@ void Window::run(const QStringList &args,std::function<void(QJsonObject)> done){
 void Window::reload(){
     if(externalBusy||process||!pendingSettings.isEmpty()||refreshPending)return;
     eventRefreshPending=false;
-    run({"--probe"},[this](QJsonObject json){
+    const quint64 startedGeneration=generation.current;
+    run({"--probe"},[this,startedGeneration](QJsonObject json){
+        if(!generation.accepts(startedGeneration)){eventRefreshPending=true;return;}
         if(!json["features"].isObject()||(json.contains("ok")&&!json["ok"].toBool())){markStale(json["error"].toString("设备进程未返回完整快照"));return;}
         json["stale"]=false;json["lastSuccessfulRead"]=json["timestamp"];json["lastAttemptAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
         if(!json.contains("gpuOccupancy")&&snapshot.contains("gpuOccupancy"))json["gpuOccupancy"]=snapshot["gpuOccupancy"];
@@ -173,9 +181,14 @@ void Window::updateState(const QJsonObject &json){
     updateDiagnostics();loading=false;enableControls();emit snapshotChanged(presentationState());
 }
 void Window::setValue(const QString &id,int value){
-    if(loading||quitPending||externalBusy||!Ui::writable(snapshot,id))return;
+    if(property("handoffActive").toBool()||loading||quitPending||externalBusy||!Ui::writable(snapshot,id))return;
     if(!pendingSettings.contains(id)&&snapshot["features"].toObject()[id].toObject()["value"].toInt(-1)==value)return;
+    SYSTEM_POWER_STATUS supply{};if(GetSystemPowerStatus(&supply)&&supply.ACLineStatus<=1)emit supplyObserved(supply.ACLineStatus==1);
     emit manualSettingRequested(id,value);
+    const auto feature=snapshot["features"].toObject()[id].toObject();
+    const auto target=TargetContext::key(id,feature);
+    if(TargetContext::required(id)&&(target.isEmpty()||(id=="refresh"&&feature["displayIdentity"].toString().isEmpty()))){status->setText("目标设备身份未知，请刷新后重试。");emit manualSettingFinished(id,false);return;}
+    pendingContexts[id]=QJsonObject{{"target",target},{"requestId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"generation",qint64(generation.current)}};
     if(!pendingSettings.contains(id))pendingOrder<<id;pendingSettings[id]=value;updateState(snapshot);drainPending();
 }
 QJsonObject Window::presentationState()const{auto state=snapshot;QJsonObject pending;for(auto i=pendingSettings.begin();i!=pendingSettings.end();++i)pending[i.key()]=i.value();state["_pending"]=pending;return state;}
@@ -183,12 +196,13 @@ void Window::drainPending(){
     if(externalBusy||process||!applyingId.isEmpty()||pendingSettings.isEmpty())return;
     while(!pendingOrder.isEmpty()&&!pendingSettings.contains(pendingOrder.first()))pendingOrder.removeFirst();if(pendingOrder.isEmpty())return;
     QString id=pendingOrder.first();int value=pendingSettings[id];applyingId=id;
-    statusUntil=0;Ui::text(status,"正在应用并确认设置…");
-    run({"--apply",id,QString::number(value)},[this,id,value](QJsonObject result){
+    const auto context=pendingContexts[id];const auto requestId=context["requestId"].toString();
+    statusUntil=0;Ui::text(status,"正在应用并确认设置… "+context["target"].toString());
+    run({"--apply-target",id,QString::number(value),context["target"].toString(),requestId,QString::number(context["generation"].toInteger())},[this,id,value,requestId](QJsonObject result){
         auto fresh=snapshot;if(result["ok"].toBool()&&result["state"].isObject()){auto features=fresh["features"].toObject();features[id]=result["state"];fresh["features"]=features;}
-        if(pendingSettings.value(id)==value){pendingSettings.remove(id);pendingOrder.removeAll(id);}applyingId.clear();
+        if(pendingContexts[id]["requestId"].toString()==requestId){pendingSettings.remove(id);pendingContexts.remove(id);pendingOrder.removeAll(id);}applyingId.clear();
         if(pendingSettings.isEmpty())refreshPending=true;
-        if(result["unknownOutcome"].toBool()){auto discarded=pendingSettings.keys();pendingSettings.clear();pendingOrder.clear();for(const auto &pending:discarded)emit manualSettingFinished(pending,false);fresh=Ui::expiredSnapshot(fresh,result["error"].toString("设置结果未知"),QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));}
+        if(result["unknownOutcome"].toBool()){auto discarded=pendingSettings.keys();pendingSettings.clear();pendingContexts.clear();pendingOrder.clear();for(const auto &pending:discarded)emit manualSettingFinished(pending,false);fresh=Ui::expiredSnapshot(fresh,result["error"].toString("设置结果未知"),QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));}
         updateState(fresh);
         QString message=result["ok"].toBool()?result["message"].toString("设置已由设备回读确认。"):"设置未完成："+result["error"].toString();
         statusUntil=QDateTime::currentMSecsSinceEpoch()+6000;Ui::text(status,message);emit operationFinished(result["ok"].toBool(),message);

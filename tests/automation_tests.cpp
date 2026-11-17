@@ -13,6 +13,25 @@ void profile(Engine &e,const char *key,const QJsonObject &actions){e.config["ena
 class AutomationTests:public QObject {
     Q_OBJECT
 private slots:
+    void delayedSupplyDoesNotEraseLaterManualIntent(){
+        Engine e;profile(e,"dc",{{"brightness",25}});e.observe(snapshot(true));
+        e.supplyChanged(false);e.manual("brightness");
+        QVERIFY(e.observe(snapshot(false)).isEmpty());QVERIFY(e.overrides.contains("brightness"));
+        e.supplyChanged(true);QVERIFY(!e.overrides.contains("brightness"));
+        e.observe(snapshot(true));e.manual("brightness");e.supplyChanged(false);
+        QCOMPARE(e.observe(snapshot(false)).size(),1);
+    }
+    void rapidSupplyRoundTripStillStartsANewContext(){
+        Engine e;profile(e,"ac",{{"brightness",80}});QCOMPARE(e.observe(snapshot(true)).size(),1);
+        e.manual("brightness");e.supplyChanged(false);e.supplyChanged(true);
+        QCOMPARE(e.observe(snapshot(true)).size(),1);QVERIFY(e.observe(snapshot(true)).isEmpty());
+    }
+    void cancellationSurvivesAnInflightStartAndRestart(){
+        Engine e;QString error;auto actions=e.startTopUp(snapshot(),&error);
+        auto t=e.config["topUp"].toObject();t["cancelRequested"]=true;e.config["topUp"]=t;
+        e.complete(actions[0],{{"ok",true}});QVERIFY(e.config["topUp"].toObject()["cancelRequested"].toBool());
+        actions=e.observe(snapshot(true,0));QCOMPARE(actions.size(),1);QCOMPARE(actions[0].reason,QString("topUpRestore"));
+    }
     void transitionOnlyAndManualOverride(){
         Engine e;profile(e,"ac",{{"its",3},{"brightness",75}});profile(e,"dc",{{"its",1}});
         auto a=e.observe(snapshot());QCOMPARE(a.size(),2);QCOMPARE(a[0].id,QString("its"));QCOMPARE(a[0].expected,0);

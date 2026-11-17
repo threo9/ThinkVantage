@@ -20,6 +20,10 @@ public:
     bool recovery=true;
     QSet<QString> overrides;
     std::optional<bool> lastAc;
+    std::optional<bool> supplyContext;
+    quint64 supplyEpoch=0,appliedSupplyEpoch=0;
+    bool needsSupplyEvaluation()const{return !lastAc||supplyEpoch!=appliedSupplyEpoch;}
+    void supplyChanged(bool ac){if(supplyContext&&*supplyContext!=ac){overrides.clear();++supplyEpoch;}supplyContext=ac;}
     QJsonObject lastEvaluation;
     QList<Action> observe(const QJsonObject &snapshot);
     QList<Action> startTopUp(const QJsonObject &snapshot,QString *error);

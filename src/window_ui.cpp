@@ -37,7 +37,7 @@ Window::Window(const QString &path,bool smokeTest):capturePath(path),smoke(smoke
     auto sideNote=label("ThinkVantage  "+QCoreApplication::applicationVersion()+"\nWindows 11","sideNote");nav->addWidget(sideNote);outer->addWidget(sidebar);
     auto content=new QWidget;auto column=new QVBoxLayout(content);column->setContentsMargins(30,20,26,14);column->setSpacing(14);
     auto header=new QHBoxLayout;header->setSpacing(8);device=label("正在连接设备…","device");header->addWidget(device,1);
-    admin=new QPushButton("管理员模式");admin->setObjectName("admin");admin->setToolTip("以管理员身份重新打开，使用需要提升权限的设备设置");connect(admin,&QPushButton::clicked,this,[this]{if(Backend::relaunchElevated())requestQuit();else status->setText("未完成管理员启动。");});header->addWidget(admin);
+    admin=new QPushButton("管理员模式");admin->setObjectName("admin");admin->setToolTip("以管理员身份重新打开，使用需要提升权限的设备设置");connect(admin,&QPushButton::clicked,this,[this]{emit elevationRequested();});header->addWidget(admin);
     refresh=new QPushButton("刷新");refresh->setToolTip("重新读取设备状态");connect(refresh,&QPushButton::clicked,this,&Window::reload);header->addWidget(refresh);column->addLayout(header);
     pages=new QStackedWidget;column->addWidget(pages,1);status=label("正在读取设备状态…","status");column->addWidget(status);outer->addWidget(content,1);connect(list,&QListWidget::currentRowChanged,pages,&QStackedWidget::setCurrentIndex);
 

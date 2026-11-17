@@ -3,6 +3,7 @@ import argparse
 import json
 import pathlib
 import subprocess
+import re
 
 p = argparse.ArgumentParser()
 p.add_argument('executable', type=pathlib.Path)
@@ -22,13 +23,16 @@ def check(command, ok=None):
     return value
 
 check(['--help'], True)
-assert check(['--version'], True)['version'] == '0.7.0'
+expected_version = re.search(r'project\(ThinkVantage VERSION ([0-9.]+)', (pathlib.Path(__file__).resolve().parents[1] / 'CMakeLists.txt').read_text(encoding='utf-8')).group(1)
+assert check(['--version'], True)['version'] == expected_version
 for command in [
     ['--not-a-command'], ['--probe', 'extra'], ['--apply'], ['--apply', 'volume'],
     ['--apply', 'volume', 'nan'], ['--apply', 'volume', '-1'],
     ['--apply', 'ioctl', '2'], ['--apply-if', 'power', '1'],
     ['--apply-if', 'power', '1', '-999', 'unknown'],
     ['--get'], ['--gpu-processes', 'extra'], ['--apply-if', 'power', '1', '1.5'],
+    ['--apply-target', 'volume', '50'],
+    ['--apply-target', 'volume', '50', 'invalid', 'request-test', 'bad-generation'],
 ]:
     check(command, False)
 snapshot = check(['--probe'], True)
@@ -38,6 +42,10 @@ gpu = check(['--gpu-processes'])
 assert isinstance(gpu['available'], bool) and isinstance(gpu['processes'], list), gpu
 assert gpu['ok'] == gpu['available'], gpu
 power = snapshot['features']['power']
+volume = snapshot['features']['volume']
+if volume['available']:
+    result = check(['--apply-target', 'volume', str(volume['value']), 'invalid-endpoint', 'request-test', '1'], False)
+    assert result['errorCode'] == 'target_changed' and result['conflict'] is True, result
 if power['available']:
     # Power modes are in [0,2], so -999 cannot match. Backend must reject while
     # holding the write lock, before reaching any setter.

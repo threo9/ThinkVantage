@@ -1,8 +1,8 @@
 #include <windows.h>
 1 RT_MANIFEST "app.manifest"
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,7,0,0
- PRODUCTVERSION 0,7,0,0
+ FILEVERSION 0,7,1,0
+ PRODUCTVERSION 0,7,1,0
  FILETYPE VFT_APP
 BEGIN
  BLOCK "StringFileInfo"
@@ -11,7 +11,7 @@ BEGIN
   BEGIN
    VALUE "FileDescription", "ThinkVantage - Device Settings"
    VALUE "ProductName", "ThinkVantage"
-   VALUE "FileVersion", "0.7.0"
+   VALUE "FileVersion", "0.7.1"
   END
  END
 END

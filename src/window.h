@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <functional>
+#include "target_context.h"
 class QStackedWidget;
 class QLabel;
 class QPushButton;
@@ -27,6 +28,8 @@ public:
     void applySetting(const QString &id,int value){setValue(id,value);}
     void requestQuit();
     std::function<bool()> quitGuard;
+    std::function<bool()> handoffPreparation;
+    std::function<void()> handoffCancelled;
 signals:
     void snapshotChanged(const QJsonObject &state);
     void busyChanged(bool busy);
@@ -34,6 +37,8 @@ signals:
     void hiddenToTray();
     void manualSettingRequested(const QString &id,int value);
     void manualSettingFinished(const QString &id,bool ok);
+    void supplyObserved(bool ac);
+    void elevationRequested();
 protected:
     void closeEvent(QCloseEvent *event)override;
     bool eventFilter(QObject *object,QEvent *event)override;
@@ -61,6 +66,8 @@ private:
     bool eventRefreshPending=false;
     QString applyingId;
     QMap<QString,int> pendingSettings;
+    QMap<QString,QJsonObject> pendingContexts;
+    TargetContext::GenerationFence generation;
     QStringList pendingOrder;
     qint64 statusUntil=0;
     QJsonObject presentationState() const;

@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "target_context.h"
 #include "protocol.h"
 #include "vendor.h"
 #include "vendor_data.h"
@@ -426,7 +427,7 @@ QJsonObject read(){
     catch(const std::exception &err){r["ok"]=r.contains("features");r["partial"]=true;r["error"]=QString::fromUtf8(err.what());}
     return r;
 }
-QJsonObject apply(const QString &id,int value,std::optional<int> expectedPrevious,std::optional<bool> expectedAc){
+QJsonObject apply(const QString &id,int value,std::optional<int> expectedPrevious,std::optional<bool> expectedAc,const QString &expectedTarget){
     QJsonObject r{{"schema",1},{"ok",false},{"id",id},{"requested",value},{"startedAt",observedNow()}};
     std::unique_ptr<RefreshTransaction> preview;
     bool writeAttempted=false;
@@ -450,6 +451,9 @@ QJsonObject apply(const QString &id,int value,std::optional<int> expectedPreviou
         std::unique_ptr<Display> display;if(id=="refresh")display=std::make_unique<Display>();
         // Read and validate fresh capability state in the worker before every write.
         auto before=feature(id,e,audio.get(),display.get(),{},powerSupply);
+        if(!expectedTarget.isNull()&&!TargetContext::matches(id,expectedTarget,before)){
+            r["conflict"]=true;r["errorCode"]="target_changed";r["expectedTarget"]=expectedTarget;r["observedTarget"]=TargetContext::key(id,before);r["error"]="目标设备已变化，请刷新并确认目标后重试";return r;
+        }
         QString brightnessTarget=id=="brightness"?before["instanceName"].toString():QString();
         if(expectedPrevious&&before["value"].toInt(-999)!=*expectedPrevious){r["conflict"]=true;r["observed"]=before["value"];r["error"]="设置已被用户或其他程序更改，条件操作已取消";return r;}
         checkSupply();

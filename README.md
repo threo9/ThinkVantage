@@ -1,4 +1,6 @@
-# ThinkVantage 0.7.0
+# ThinkVantage 0.7.1
+
+0.7.1 修复排队请求的设备目标校验、供电变化与手动覆盖顺序、忙碌期间取消/暂停、默认验证入口及管理员确认交接。详见随包提供的 `REVIEW_FIXES_2026-11-17.md`。
 
 面向 Windows 11 x64 的轻量设备设置工具，使用 C++20、Qt 6.12.0 Widgets 和 E:\Qt6 中的 MSVC 143 构建，针对 ThinkBook 16 G6+ IMH / 21LE 适配。
 
@@ -93,7 +95,7 @@ cd E:\Code\ThinkVantage
 .\scripts\verify-smooth.ps1
 ```
 
-工具链使用E:\Qt6中的MSVC 143 19.44、Windows SDK 10.0.26100.0、CMake与Ninja；`-QtRoot`可指定工具链根目录，`-QtPrefix`可指定兼容的静态Qt，`-Jobs`限制并行任务。构建仅修改当前进程环境。Qt缓存位于build/qt，应用构建位于build/static-release，发布到dist/ThinkVantage-0.7.0-win64-static。检测到动态Qt时配置会直接报错。
+工具链使用E:\Qt6中的MSVC 143 19.44、Windows SDK 10.0.26100.0、CMake与Ninja；`-QtRoot`可指定工具链根目录，`-QtPrefix`可指定兼容的静态Qt，`-Jobs`限制并行任务。构建仅修改当前进程环境。Qt缓存位于build/qt，应用构建位于build/static-release，发布到dist/ThinkVantage-0.7.1-win64-static。检测到动态Qt时配置会直接报错。
 
 静态Qt保留Core、Gui、Widgets、Network及测试所需组件；关闭OpenGL、Vulkan、ICU、SQL、打印、DBus、SSL、HTTP、网络代理、网络磁盘缓存、SOCKS5、UDP、图形特效、PDF及未使用的Windows主题插件。保留Fusion、Windows平台、字体与无障碍功能，Network中的QLocalServer/QLocalSocket继续承担单实例通信。发布程序只静态导入Windows平台插件，测试程序另导入offscreen插件。配置方式见[Qt静态部署说明](https://doc.qt.io/qt-6/windows-deployment.html)与[Qt配置选项](https://doc.qt.io/qt-6/configure-options.html)。
 
@@ -104,7 +106,7 @@ Qt和应用均启用体积优化与链接时代码生成；应用使用/O1、/GL
 发布目录的relink包含应用对象、protocol.lib和链接响应文件，可用同工具链、兼容配置的修改版Qt重新链接：
 
 ```powershell
-.\dist\ThinkVantage-0.7.0-win64-static\relink\relink.ps1 -QtPrefix '兼容的静态Qt目录'
+.\dist\ThinkVantage-0.7.1-win64-static\relink\relink.ps1 -QtPrefix '兼容的静态Qt目录'
 ```
 
 Qt原始源码：[qtbase 6.12.0](https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz)，SHA-256为a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307；构建不修改Qt源码。Qt许可证、SBOM和重链接材料随静态包保留，不改变联想组件或原创源码的许可。
